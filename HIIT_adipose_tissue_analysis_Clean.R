@@ -1080,6 +1080,175 @@ ggsave(plot = ggarrange(log_TvsL, log_OvsL, log_TvsO, log_venn), filename = "Plo
 ggsave("Plot5", log_PrevsPost,device = "png")
 
 #Plot CORR - p-value
+ggplot(small_test_NI_FFM1, aes(as.numeric(correlation), -log10(pVal), color = pVal > 0.05)) + geom_point(aes(alpha = 0.4)) + 
+  theme_minimal() + 
+  labs(x = "R value") + 
+  geom_hline(yintercept = -log10(0.05), color = "red") + 
+  scale_x_continuous(limits = c(-0.4,0.4), seq(-0.4, 0.4, by = 0.1) , name = "R-Value")
 
-ggplot(small_test_NI_FFM1, aes(as.numeric(correlation), -log10(pVal))) + geom_point() + theme_minimal()
-class(small_test_NI_FFM1$correlation)
+#### Enrichment analysis on correlation ####
+##Fisher
+FFM_simple_mat <- small_test_NI_FFM1[,c(2,4)]  
+FFM_simple_mat$Sig <- "NO"
+FFM_simple_mat$Sig[FFM_simple_mat$pVal < 0.05] <- "+"
+# write.table(FFM_simple_mat, file = "FFM_GOBP.csv", sep = ",",row.names = F) #For perseus
+  #GOBP
+colnames(matrix_annotations_GOBP) <- c("Annotaion","Protein")
+FFM_GOBP_anot <- merge(FFM_simple_mat, matrix_annotations_GOBP, by = "Protein")
+N_GOBP <- nrow(FFM_GOBP_anot)
+n_GOBP <- length(which(FFM_GOBP_anot$Sig == "+"))
+annotaions_GOBP <- unique(FFM_GOBP_anot$Annotaion) 
+
+pval_fisher_GOBP <- data.frame()
+for(anot in annotaions_GOBP){
+  rows_anot <- FFM_GOBP_anot[which(FFM_GOBP_anot$Annotaion == anot),]
+  
+  K <- nrow(rows_anot)
+  k <- length(which(rows_anot$Sig == "+"))
+  
+  m <- matrix(c(k,K-k,n_GOBP-k, N_GOBP-K-n_GOBP+k),2,2)
+  fish <- fisher.test(m)
+  pval_fisher_GOBP <- rbind(pval_fisher_GOBP, c(anot, fish[["p.value"]]))
+}
+colnames(pval_fisher_GOBP) <- c("Annotaion", "pvalue")
+pval_fisher_GOBP$p.adj <- p.adjust(pval_fisher_GOBP$pvalue, method = "BH")
+
+  #GOCC
+colnames(matrix_annotations_GOCC) <- c("Annotaion","Protein")
+FFM_GOCC_anot <- merge(FFM_simple_mat, matrix_annotations_GOCC, by = "Protein")
+N_GOCC <- nrow(FFM_GOCC_anot)
+n_GOCC <- length(which(FFM_GOCC_anot$Sig == "+"))
+annotaions_GOCC <- unique(FFM_GOCC_anot$Annotaion) 
+
+pval_fisher_GOCC <- data.frame()
+for(anot in annotaions_GOCC){
+  rows_anot <- FFM_GOCC_anot[which(FFM_GOCC_anot$Annotaion == anot),]
+  
+  K <- nrow(rows_anot)
+  k <- length(which(rows_anot$Sig == "+"))
+  
+  m <- matrix(c(k,K-k,n_GOCC-k, N_GOCC-K-n_GOCC+k),2,2)
+  fish <- fisher.test(m)
+  pval_fisher_GOCC <- rbind(pval_fisher_GOCC, c(anot, fish[["p.value"]]))
+}
+colnames(pval_fisher_GOCC) <- c("Annotaion", "pvalue")
+pval_fisher_GOCC$p.adj <- p.adjust(pval_fisher_GOCC$pvalue, method = "BH")
+
+  #GOMF
+colnames(matrix_annotations_GOMF) <- c("Annotaion","Protein")
+FFM_GOMF_anot <- merge(FFM_simple_mat, matrix_annotations_GOMF, by = "Protein")
+N_GOMF <- nrow(FFM_GOMF_anot)
+n_GOMF <- length(which(FFM_GOMF_anot$Sig == "+"))
+annotaions_GOMF <- unique(FFM_GOMF_anot$Annotaion) 
+
+pval_fisher_GOMF <- data.frame()
+for(anot in annotaions_GOMF){
+  rows_anot <- FFM_GOMF_anot[which(FFM_GOMF_anot$Annotaion == anot),]
+  
+  K <- nrow(rows_anot)
+  k <- length(which(rows_anot$Sig == "+"))
+  
+  m <- matrix(c(k,K-k,n_GOMF-k, N_GOMF-K-n_GOMF+k),2,2)
+  fish <- fisher.test(m)
+  pval_fisher_GOMF <- rbind(pval_fisher_GOMF, c(anot, fish[["p.value"]]))
+}
+colnames(pval_fisher_GOMF) <- c("Annotaion", "pvalue")
+pval_fisher_GOMF$p.adj <- p.adjust(pval_fisher_GOMF$pvalue, method = "BH")
+
+  #KEGG
+colnames(matrix_annotations_KEGG) <- c("Annotaion","Protein")
+FFM_KEGG_anot <- merge(FFM_simple_mat, matrix_annotations_KEGG, by = "Protein")
+N_KEGG <- nrow(FFM_KEGG_anot)
+n_KEGG <- length(which(FFM_KEGG_anot$Sig == "+"))
+annotaions_KEGG <- unique(FFM_KEGG_anot$Annotaion) 
+
+pval_fisher_KEGG <- data.frame()
+for(anot in annotaions_KEGG){
+  rows_anot <- FFM_KEGG_anot[which(FFM_KEGG_anot$Annotaion == anot),]
+  
+  K <- nrow(rows_anot)
+  k <- length(which(rows_anot$Sig == "+"))
+  
+  m <- matrix(c(k,K-k,n_KEGG-k, N_KEGG-K-n_KEGG+k),2,2)
+  fish <- fisher.test(m)
+  pval_fisher_KEGG <- rbind(pval_fisher_KEGG, c(anot, fish[["p.value"]]))
+}
+colnames(pval_fisher_KEGG) <- c("Annotaion", "pvalue")
+pval_fisher_KEGG$p.adj <- p.adjust(pval_fisher_KEGG$pvalue, method = "BH")
+
+##1D enrichment
+  #GOBP
+sigWil_GOBP_FFM <- data.frame()
+for(anot in annotaions_GOBP){
+  rows_anot <- FFM_GOBP_anot[which(FFM_GOBP_anot$Annotaion == anot),]
+  wilcox <- wilcox.test(rows_anot$pVal, FFM_GOBP_anot$pVal)
+  sigWil_GOBP_FFM <- rbind(sigWil_GOBP_FFM, c(anot, wilcox$p.value))
+}
+colnames(sigWil_GOBP_FFM) <- c("Annotation", "pVal")
+sigWil_GOBP_FFM$p.adj <- p.adjust(sigWil_GOBP_FFM$pVal, method = "BH")
+sigWil_GOBP_FFM <- sigWil_GOBP_FFM[sigWil_GOBP_FFM$p.adj <= 0.05,]
+
+s <- c()
+for(anot in sigWil_GOBP_FFM$Annotation){
+  rows_anot <- FFM_GOBP_anot[which(FFM_GOBP_anot$Annotaion == anot),]
+  s.calc <- 2*(mean(rank(rows_anot$pVal)) - mean(rank(FFM_GOBP_anot$pVal)))/nrow(FFM_GOBP_anot)
+  s <- append(s,s.calc)
+}
+sigWil_GOBP_FFM <- cbind(sigWil_GOBP_FFM, s)
+
+#GOCC
+sigWil_GOCC_FFM <- data.frame()
+for(anot in annotaions_GOCC){
+  rows_anot <- FFM_GOCC_anot[which(FFM_GOCC_anot$Annotaion == anot),]
+  wilcox <- wilcox.test(rows_anot$pVal, FFM_GOCC_anot$pVal)
+  sigWil_GOCC_FFM <- rbind(sigWil_GOCC_FFM, c(anot, wilcox$p.value))
+}
+colnames(sigWil_GOCC_FFM) <- c("Annotation", "pVal")
+sigWil_GOCC_FFM$p.adj <- p.adjust(sigWil_GOCC_FFM$pVal, method = "BH")
+sigWil_GOCC_FFM <- sigWil_GOCC_FFM[sigWil_GOCC_FFM$p.adj <= 0.05,]
+
+s <- c()
+for(anot in sigWil_GOCC_FFM$Annotation){
+  rows_anot <- FFM_GOCC_anot[which(FFM_GOCC_anot$Annotaion == anot),]
+  s.calc <- 2*(mean(rank(rows_anot$pVal)) - mean(rank(FFM_GOCC_anot$pVal)))/nrow(FFM_GOCC_anot)
+  s <- append(s,s.calc)
+}
+sigWil_GOCC_FFM <- cbind(sigWil_GOCC_FFM, s)
+
+#GOMF
+sigWil_GOMF_FFM <- data.frame()
+for(anot in annotaions_GOMF){
+  rows_anot <- FFM_GOMF_anot[which(FFM_GOMF_anot$Annotaion == anot),]
+  wilcox <- wilcox.test(rows_anot$pVal, FFM_GOMF_anot$pVal)
+  sigWil_GOMF_FFM <- rbind(sigWil_GOMF_FFM, c(anot, wilcox$p.value))
+}
+colnames(sigWil_GOMF_FFM) <- c("Annotation", "pVal")
+sigWil_GOMF_FFM$p.adj <- p.adjust(sigWil_GOMF_FFM$pVal, method = "BH")
+sigWil_GOMF_FFM <- sigWil_GOMF_FFM[sigWil_GOMF_FFM$p.adj <= 0.05,]
+
+s <- c()
+for(anot in sigWil_GOMF_FFM$Annotation){
+  rows_anot <- FFM_GOMF_anot[which(FFM_GOMF_anot$Annotaion == anot),]
+  s.calc <- 2*(mean(rank(rows_anot$pVal)) - mean(rank(FFM_GOMF_anot$pVal)))/nrow(FFM_GOMF_anot)
+  s <- append(s,s.calc)
+}
+sigWil_GOMF_FFM <- cbind(sigWil_GOMF_FFM, s)
+
+#KEGG
+sigWil_KEGG_FFM <- data.frame()
+for(anot in annotaions_KEGG){
+  rows_anot <- FFM_KEGG_anot[which(FFM_KEGG_anot$Annotaion == anot),]
+  wilcox <- wilcox.test(rows_anot$pVal, FFM_KEGG_anot$pVal)
+  sigWil_KEGG_FFM <- rbind(sigWil_KEGG_FFM, c(anot, wilcox$p.value))
+}
+colnames(sigWil_KEGG_FFM) <- c("Annotation", "pVal")
+sigWil_KEGG_FFM$p.adj <- p.adjust(sigWil_KEGG_FFM$pVal, method = "BH")
+sigWil_KEGG_FFM <- sigWil_KEGG_FFM[sigWil_KEGG_FFM$p.adj <= 0.05,]
+
+s <- c()
+for(anot in sigWil_KEGG_FFM$Annotation){
+  rows_anot <- FFM_KEGG_anot[which(FFM_KEGG_anot$Annotaion == anot),]
+  s.calc <- 2*(mean(rank(rows_anot$pVal)) - mean(rank(FFM_KEGG_anot$pVal)))/nrow(FFM_KEGG_anot)
+  s <- append(s,s.calc)
+}
+sigWil_KEGG_FFM <- cbind(sigWil_KEGG_FFM, s)
