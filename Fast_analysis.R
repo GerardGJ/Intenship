@@ -31,6 +31,9 @@ library("stringi")
 library('ReactomePA')
 library('rmcorr')
 library('tidygraph')
+library('eulerr')
+library('corrplot')
+library('dendextend')
 setwd("/Users/Gerard/Desktop/")
 #### Functions ####
 
@@ -142,6 +145,11 @@ enrichment_1D_with_pvals <- function(annotations, matrix_anots_pvals){
   }
   return(cbind(sigWil, s))
 }
+
+Xiao_correction <- function(matrix_limma){
+  return(matrix_limma[,4] ** abs(matrix_limma[,1]))
+}
+
 #### Preprocessing ####
 ### Importing data
 
@@ -215,23 +223,152 @@ Exprs_adipose_noBatch_notImp <- removeBatchEffect(Exprs_adipose_notImputed, batc
 set.seed(123)
 Exprs_adipose_imputed <- scImpute(Exprs_adipose_notImputed, 0.7, combined)
 Exprs_adipose_imputed <- tImpute(Exprs_adipose_imputed, m=1.6, s=0.6)
-#Exprs_adipose <- tImpute(Exprs_adipose, m=1.8, s=0.3)
+Exprs_adipose_imputed_allLow <- tImpute(Exprs_adipose_notImputed, m=1.6, s=0.6)
 Exprs_adipose_noBatch_Imp <- removeBatchEffect(Exprs_adipose_imputed, batch = cluster, design = design)
+Exprs_adipose <- Exprs_adipose_notImputed
+#### Plot Imputation ####
 
-Exprs_adipose <- Exprs_adipose_imputed
+Sample6_select = c(60,62,72,27,37,1)
+Na_Exprs <- is.na(Exprs_adipose_notImputed[,Sample6_select])
+Exprs_adipose_6_I = Exprs_adipose_imputed_allLow[,Sample6_select]
+
+barplot1 <- ggplot() + geom_histogram(aes(Exprs_adipose_6_I[,1], fill = Na_Exprs[,1], alpha = 1000),position = "stack", color = "black") + 
+  theme_minimal() + 
+  theme(legend.position = "none") + 
+  scale_fill_manual(values = c("blue","red")) +
+  labs(x = colnames(Exprs_adipose_6_I)[1])
+
+barplot2 <- ggplot() + geom_histogram(aes(Exprs_adipose_6_I[,2], fill = Na_Exprs[,2], alpha = 1000),position = "stack", color = "black") + 
+  theme_minimal() + 
+  theme(legend.position = "none") + 
+  scale_fill_manual(values = c("blue","red")) +
+  labs(x = colnames(Exprs_adipose_6_I)[2])
+
+barplot3 <- ggplot() + geom_histogram(aes(Exprs_adipose_6_I[,3], fill = Na_Exprs[,3], alpha = 1000),position = "stack", color = "black") + 
+  theme_minimal() + 
+  theme(legend.position = "none") + 
+  scale_fill_manual(values = c("blue","red")) +
+  labs(x = colnames(Exprs_adipose_6_I)[3])
+
+barplot4 <- ggplot() + geom_histogram(aes(Exprs_adipose_6_I[,4], fill = Na_Exprs[,4], alpha = 1000),position = "stack", color = "black") + 
+  theme_minimal() + 
+  theme(legend.position = "none") + 
+  scale_fill_manual(values = c("blue","red")) +
+  labs(x = colnames(Exprs_adipose_6_I)[4])
+
+barplot5 <- ggplot() + geom_histogram(aes(Exprs_adipose_6_I[,5], fill = Na_Exprs[,5], alpha = 1000),position = "stack", color = "black") + 
+  theme_minimal() + 
+  theme(legend.position = "none") + 
+  scale_fill_manual(values = c("blue","red")) +
+  labs(x = colnames(Exprs_adipose_6_I)[5])
+
+barplot6 <- ggplot() + geom_histogram(aes(Exprs_adipose_6_I[,6], fill = Na_Exprs[,6], alpha = 1000),position = "stack", color = "black") + 
+  theme_minimal() + 
+  theme(legend.position = "none") + 
+  scale_fill_manual(values = c("blue","red")) +
+  labs(x = colnames(Exprs_adipose_6_I)[6])
+
+ggarrange(barplot1, barplot2, barplot3, barplot4, barplot5, barplot6)
+
+qqplot1 <- ggplot(mapping = aes(sample = Exprs_adipose_6_I[,1])) + stat_qq_line(size = 1) +
+  stat_qq(aes(alpha = 1000),color = "red") + theme_minimal() + 
+  theme(legend.position = "none") + labs(title = colnames(Exprs_adipose_notImputed[,Sample6_select])[1])
+qqplot2 <- ggplot(mapping = aes(sample = Exprs_adipose_6_I[,2])) + stat_qq_line(size = 1) +
+  stat_qq(aes(alpha = 1000),color = "red") + theme_minimal() + 
+  theme(legend.position = "none") + labs(title = colnames(Exprs_adipose_notImputed[,Sample6_select])[2])
+qqplot3 <- ggplot(mapping = aes(sample = Exprs_adipose_6_I[,3])) + stat_qq_line(size = 1) +
+  stat_qq(aes(alpha = 1000),color = "red") + theme_minimal() + 
+  theme(legend.position = "none") + labs(title = colnames(Exprs_adipose_notImputed[,Sample6_select])[3])
+qqplot4 <- ggplot(mapping = aes(sample = Exprs_adipose_6_I[,4])) + stat_qq_line(size = 1) +
+  stat_qq(aes(alpha = 1000),color = "red") + theme_minimal() + 
+  theme(legend.position = "none") + labs(title = colnames(Exprs_adipose_notImputed[,Sample6_select])[4])
+qqplot5 <- ggplot(mapping = aes(sample = Exprs_adipose_6_I[,5])) + stat_qq_line(size = 1) +
+  stat_qq(aes(alpha = 1000),color = "red") + theme_minimal() + 
+  theme(legend.position = "none") + labs(title = colnames(Exprs_adipose_notImputed[,Sample6_select])[5])
+qqplot6 <- ggplot(mapping = aes(sample = Exprs_adipose_6_I[,6])) + stat_qq_line(size = 1) +
+  stat_qq(aes(alpha = 1000),color = "red") + theme_minimal() + 
+  theme(legend.position = "none") + labs(title = colnames(Exprs_adipose_notImputed[,Sample6_select])[6])
+
+ggarrange(qqplot1,qqplot2,qqplot3,qqplot4,qqplot5,qqplot6)
+#### Plot Not imputed ####
+barplot1 <- ggplot() + geom_histogram(aes(Exprs_adipose_notImputed[,Sample6_select][,1], alpha = 1000),position = "stack", color = "black", fill = "blue") + 
+  theme_minimal() + 
+  theme(legend.position = "none") + 
+  labs(x = colnames(Exprs_adipose_notImputed[,Sample6_select])[1])
+
+barplot2 <- ggplot() + geom_histogram(aes(Exprs_adipose_notImputed[,Sample6_select][,2], alpha = 1000),position = "stack", color = "black", fill = "blue") + 
+  theme_minimal() + 
+  theme(legend.position = "none") + 
+  labs(x = colnames(Exprs_adipose_notImputed[,Sample6_select])[2])
+
+barplot3 <- ggplot() + geom_histogram(aes(Exprs_adipose_notImputed[,Sample6_select][,3], alpha = 1000),position = "stack", color = "black", fill = "blue") + 
+  theme_minimal() + 
+  theme(legend.position = "none") + 
+  labs(x = colnames(Exprs_adipose_notImputed[,Sample6_select])[3])
+
+barplot4 <- ggplot() + geom_histogram(aes(Exprs_adipose_notImputed[,Sample6_select][,4], alpha = 1000),position = "stack", color = "black", fill = "blue") + 
+  theme_minimal() + 
+  theme(legend.position = "none") + 
+  labs(x = colnames(Exprs_adipose_notImputed[,Sample6_select])[4])
+
+barplot5 <- ggplot() + geom_histogram(aes(Exprs_adipose_notImputed[,Sample6_select][,5], alpha = 1000),position = "stack", color = "black", fill = "blue") + 
+  theme_minimal() + 
+  theme(legend.position = "none") + 
+  labs(x = colnames(Exprs_adipose_notImputed[,Sample6_select])[5])
+
+barplot6 <- ggplot() + geom_histogram(aes(Exprs_adipose_notImputed[,Sample6_select][,6], alpha = 1000),position = "stack", color = "black", fill = "blue") + 
+  theme_minimal() + 
+  theme(legend.position = "none") + 
+  labs(x = colnames(Exprs_adipose_notImputed[,Sample6_select])[6])
+
+ggarrange(barplot1, barplot2, barplot3, barplot4, barplot5, barplot6)
+
+
+qqplot1 <- ggplot(mapping = aes(sample = Exprs_adipose_notImputed[,Sample6_select][,1])) + stat_qq_line(size = 1) +
+  stat_qq(aes(alpha = 1000),color = "red") + theme_minimal() + 
+  theme(legend.position = "none") + labs(title = colnames(Exprs_adipose_notImputed[,Sample6_select])[1]) + 
+  scale_color_viridis()
+qqplot2 <- ggplot(mapping = aes(sample = Exprs_adipose_notImputed[,Sample6_select][,2])) + stat_qq_line(size = 1) +
+  stat_qq(aes(alpha = 1000),color = "red") + theme_minimal() + 
+  theme(legend.position = "none") + labs(title = colnames(Exprs_adipose_notImputed[,Sample6_select])[2])
+qqplot3 <- ggplot(mapping = aes(sample = Exprs_adipose_notImputed[,Sample6_select][,3])) + stat_qq_line(size = 1) +
+  stat_qq(aes(alpha = 1000),color = "red") + theme_minimal() + 
+  theme(legend.position = "none") + labs(title = colnames(Exprs_adipose_notImputed[,Sample6_select])[3])
+qqplot4 <- ggplot(mapping = aes(sample = Exprs_adipose_notImputed[,Sample6_select][,4])) + stat_qq_line(size = 1) +
+  stat_qq(aes(alpha = 1000),color = "red") + theme_minimal() + 
+  theme(legend.position = "none") + labs(title = colnames(Exprs_adipose_notImputed[,Sample6_select])[4])
+qqplot5 <- ggplot(mapping = aes(sample = Exprs_adipose_notImputed[,Sample6_select][,5])) + stat_qq_line(size = 1) +
+  stat_qq(aes(alpha = 1000),color = "red") + theme_minimal() + 
+  theme(legend.position = "none") + labs(title = colnames(Exprs_adipose_notImputed[,Sample6_select])[5])
+qqplot6 <- ggplot(mapping = aes(sample = Exprs_adipose_notImputed[,Sample6_select][,6])) + stat_qq_line(size = 1) +
+  stat_qq(aes(alpha = 1000),color = "red") + theme_minimal() + 
+  theme(legend.position = "none") + labs(title = colnames(Exprs_adipose_notImputed[,Sample6_select])[6])
+
+ggarrange(qqplot1,qqplot2,qqplot3,qqplot4,qqplot5,qqplot6)
+
+#### Reproducibility ####
+try <- Exprs_adipose_imputed[,order(grps)]
+colnames(try) <- paste0(combined[order(grps)],"_", df$replicate[order(grps)])
+
+Correlation_matrix <- cor(try, method = "pearson")
+corrplot(Correlation_matrix, type = "upper",
+         tl.col = "black", tl.srt = 45, col.lim = c(0.5,1), is.corr = F)
+
+#### Data Transpose ####
 #Transpose the Expression Adipose dataframes:
 Exprs_adipose_imputed <- t(Exprs_adipose_imputed)
 Exprs_adipose_notImputed <- t(Exprs_adipose_notImputed)
 Exprs_adipose_noBatch_Imp <- t(Exprs_adipose_noBatch_Imp)
 Exprs_adipose_noBatch_notImp <- t(Exprs_adipose_noBatch_notImp)
-####Clinical prep delta #####
+
+#### Clinical prep delta #####
 Clinical_delta <- Delta_calculator_Clinical(clinical_data_noNA)
 
 Clinical_Z_noBatch_Delta <- Znorm(Clinical_delta[5:58])
 Clinical_Z_noBatch_Delta = cbind(Clinical_delta[1:4], Clinical_Z_noBatch_Delta)
 colnames(Clinical_Z_noBatch_Delta) = colnames(clinical_data_noNA)
 
-####Expres prep delta #####
+#### Expres prep delta #####
 notinexps <- setdiff(row.names(Exprs_adipose_noBatch_notImp),clinical_data_noNA$New_ID)
 for(name in notinexps){
   Exprs_adipose_noBatch_notImp <- Exprs_adipose_noBatch_notImp[-which(row.names(Exprs_adipose_noBatch_notImp) == name),]
@@ -296,7 +433,7 @@ for(i in 1:6){
 }
 Delta_no_leaf <- unique(Delta_no_leaf)
 
-##### rmCorr ####
+#### rmCorr ####
 Clinical_Z <- Znorm(clinical_data_noNA[5:58])
 Clinical_Z <- as.data.frame(cbind(clinical_data_noNA[1:4], Clinical_Z))
 colnames(Clinical_Z) = colnames(clinical_data_noNA)
@@ -782,44 +919,120 @@ corfit$consensus
 
 fit <- eBayes(lmFit(Exprs_adipose,design,block=df$replicate,correlation=corfit$consensus))
 
-cm <- makeContrasts(GroupLeanPost - GroupLeanPre, GroupObesePost - GroupObesePre, GroupT2DPost - GroupT2DPre, (GroupT2DPost - GroupT2DPre) - (GroupObesePost - GroupObesePre), (GroupObesePost - GroupObesePre) - (GroupLeanPost - GroupLeanPre), (GroupT2DPost - GroupT2DPre) - (GroupLeanPost - GroupLeanPre),levels=design)
+cm <- makeContrasts(GroupLeanPost - GroupLeanPre, GroupObesePost - GroupObesePre, GroupT2DPost - GroupT2DPre, (GroupLeanPost - GroupLeanPre + GroupObesePost - GroupObesePre + GroupT2DPost - GroupT2DPre)/6,(GroupT2DPost - GroupT2DPre) - (GroupObesePost - GroupObesePre), (GroupObesePost - GroupObesePre) - (GroupLeanPost - GroupLeanPre), (GroupT2DPost - GroupT2DPre) - (GroupLeanPost - GroupLeanPre), ((GroupT2DPost - GroupT2DPre)- (GroupObesePost - GroupObesePre) - (GroupLeanPost - GroupLeanPre))/6,levels=design)
 fit2 <- eBayes(contrasts.fit(fit, cm))
 
 Effecttrain_Lean <- topTable(fit2, coef = 1, number = Inf, sort.by = "none")
+Effecttrain_Lean$Xiao <- Xiao_correction(Effecttrain_Lean) 
+
 Effecttrain_Obese <- topTable(fit2, coef = 2, number = Inf, sort.by = "none")
+Effecttrain_Obese$Xiao <- Xiao_correction(Effecttrain_Obese)
+
 Effecttrain_T2D <- topTable(fit2, coef = 3, number = Inf, sort.by = "none")
-Effecttrain_main <- topTable(fit2, coef = 1:3, number = Inf, sort.by = "none")
-Interaction_OvsT <- topTable(fit2, coef = 4, number = Inf, sort.by = "none")
-Interaction_LvsO <- topTable(fit2, coef = 5, number = Inf, sort.by = "none")
-Interaction_LvsT <- topTable(fit2, coef = 6, number = Inf, sort.by = "none")
-Interaction_main <- topTable(fit2, coef = 4:6, number = Inf, sort.by = "none")
+Effecttrain_T2D$Xiao <- Xiao_correction(Effecttrain_T2D)
 
-intersect(rownames(Effecttrain_Lean),rownames(Effecttrain_Obese))
+Effecttrain_main <- topTable(fit2, coef = 4, number = Inf, sort.by = "none")
+Effecttrain_main$Xiao <- Xiao_correction(Effecttrain_main)
 
-####Dataset to send prepare ####
-sendData <- read.table("HIIT_adipose_Allinfo.txt",header = T,sep = "\t")
-new.data.send <- sendData[,1:91]
+Interaction_OvsT <- topTable(fit2, coef = 5, number = Inf, sort.by = "none")
+Interaction_OvsT$Xiao <- Xiao_correction(Interaction_OvsT)
+
+Interaction_LvsO <- topTable(fit2, coef = 6, number = Inf, sort.by = "none")
+Interaction_LvsO$Xiao <- Xiao_correction(Interaction_LvsO)
+
+Interaction_LvsT <- topTable(fit2, coef = 7, number = Inf, sort.by = "none")
+Interaction_LvsT$Xiao <- Xiao_correction(Interaction_LvsT)
+
+Interaction_main <- topTable(fit2, coef = 8, number = Inf, sort.by = "none")
+Interaction_main$Xiao <- Xiao_correction(Interaction_main)
+
+
+#### LIMMA 2 ####
+
+Group <- factor(grps, levels=c("Lean","Obese", "T2D"))
+Training <- factor(Treatment, levels=c("Pre","Post"))
+
+#The following design matrix allows for initial subtraction of main effect of training.
+design2 <- model.matrix(~ 0 + Group*Training + cluster) # Adding cluster-batch effect as covariate
+colnames(design2)[5:8] <- c("cluser_one","cluster_two","OBESEPOST","T2DPOST")
+
+corfit <- duplicateCorrelation(Exprs_adipose, design2, block=df$replicate)
+corfit$consensus
+
+fit <- eBayes(lmFit(Exprs_adipose,design2,block=df$replicate,correlation=corfit$consensus))
+cm <- makeContrasts(GroupObese - GroupLean, GroupT2D - GroupLean, GroupT2D - GroupObese, levels=design2)
+fit2 <- eBayes(contrasts.fit(fit, cm))
+
+#Main effect of groups. This takes only the "Pre's"
+mainEffect_GROUP <- topTable(fit2, coef = 1:3, number = Inf,sort.by = "none")
+main_effect_sign <- topTable(fit2, coef = 1:3, p.value = 0.05, number = Inf, lfc = 0.58)
+
+
+OBESE_vs_LEAN <- topTable(fit2, coef = 1, number = Inf, sort.by = "none")
+OBESE_vs_LEAN$Xiao <- Xiao_correction(OBESE_vs_LEAN)
+logFC_OvsL <- OBESE_vs_LEAN$logFC
+
+T2D_vs_LEAN <- topTable(fit2, coef = 2, number = Inf, sort.by = "none")
+T2D_vs_LEAN$Xiao <- Xiao_correction(T2D_vs_LEAN)
+logFC_TvsL <- T2D_vs_LEAN$logFC
+
+T2D_vs_OBESE <- topTable(fit2, coef = 3, number = Inf, sort.by = "none")
+T2D_vs_OBESE$Xiao <- Xiao_correction(T2D_vs_OBESE)
+logFC_TvsO <- T2D_vs_OBESE$logFC
+
+
+#### LIMMA Lean only ####
+Exprs_adipose_lean <- Exprs_adipose[,Group == "Lean"]
+Training_lean <- Training[Group == "Lean"]
+Cluster_lean <- cluster[Group == "Lean"]
+Lean_design <- model.matrix(~0 + Training_lean + Cluster_lean) 
+colnames(Lean_design) <- c("Pre", "Post", "Cluster1", "Cluster2")
+
+corfit <- duplicateCorrelation(Exprs_adipose_lean, Lean_design, block = df$replicate[Group == "Lean"])
+corfit$consensus
+
+fit = eBayes(lmFit(Exprs_adipose_lean, Lean_design, block = df$replicate[Group == "Lean"], correlation = corfit$consensus))
+cm <- makeContrasts(Pre - Post, levels = Lean_design)
+fit2 <- eBayes(contrasts.fit(fit,cm))
+
+Lean_PrevsPost <- topTable(fit2,1,Inf, sort.by = "none")
+Lean_PrevsPost$Xiao <- Xiao_correction(Lean_PrevsPost)
+Lean_PrevsPost$geneName <- geneSymbols
+
+#### Dataset to send prepare ####
+new.data.send <- t(Exprs_adipose_notImputed)
 new.data.send <- cbind(new.data.send,
-                       Effecttrain_Lean$logFC,Effecttrain_Lean$P.Value,Effecttrain_Lean$adj.P.Val,
-                       Effecttrain_Obese$logFC,Effecttrain_Obese$P.Value,Effecttrain_Obese$adj.P.Val,
-                       Effecttrain_T2D$logFC,Effecttrain_T2D$P.Value,Effecttrain_T2D$adj.P.Val,
+                       Effecttrain_Lean$logFC,Effecttrain_Lean$P.Value,Effecttrain_Lean$Xiao,
+                       Effecttrain_Obese$logFC,Effecttrain_Obese$P.Value,Effecttrain_Obese$Xiao,
+                       Effecttrain_T2D$logFC,Effecttrain_T2D$P.Value,Effecttrain_T2D$Xiao,
                        Effecttrain_main$P.Value, Effecttrain_main$adj.P.Val)
-colnames(new.data.send)[92:102] <- c("Effect.Training.Lean.LogFC","Effect.Training.Lean.Pval","Effect.Training.Lean.adj Pval",
-                                     "Effect.Training.Obese.LogFC","Effect.Training.Obese.Pval","Effect.Training.Obese.adj Pval",
-                                     "Effect.Training.T2D.LogFC","Effect.Training.T2D.Pval","Effect.Training.T2D.adj Pval",
+colnames(new.data.send)[92:102] <- c("Effect.Training.Lean.LogFC","Effect.Training.Lean.Pval","Effect.Training.Lean.Xiao correction",
+                                     "Effect.Training.Obese.LogFC","Effect.Training.Obese.Pval","Effect.Training.Obese.Xiao correction",
+                                     "Effect.Training.T2D.LogFC","Effect.Training.T2D.Pval","Effect.Training.T2D.Xiao correction",
                                      "Main.effect.training.Pval", "Main.effect.training.adj Pval")
-new.data.send <- cbind(new.data.send, sendData[,95:105])
+
+new.data.send <- cbind(new.data.send, 
+                       OBESE_vs_LEAN$logFC, OBESE_vs_LEAN$P.Value, OBESE_vs_LEAN$Xiao,
+                       T2D_vs_LEAN$logFC, T2D_vs_LEAN$P.Value, T2D_vs_LEAN$Xiao,
+                       T2D_vs_OBESE$logFC, T2D_vs_OBESE$P.Value, T2D_vs_OBESE$Xiao,
+                       mainEffect_GROUP$P.Value,mainEffect_GROUP$adj.P.Val)
+colnames(new.data.send)[103:113] <- c("Effect.Groups.Obese.vs.Lean.LogFC","Effect.Groups.Obese.vs.Lean.Pval","Effect.Groups.Obese.vs.Lean.Xiao correction",
+                                      "Effect.Groups.T2D.vs.Lean.LogFC","Effect.Groups.T2D.vs.Lean.Pval","Effect.Groups.T2D.vs.Lean.Xiao correction",
+                                      "Effect.Groups.T2D.vs.Obese.LogFC", "Effect.Groups.T2D.vs.Obese.Pval", "Effect.Groups.T2D.vs.Obese.Xiao correction",
+                                      "Main.Effect.Groups.Pval", "Main.Effect.Groups.adj Pval")
 
 new.data.send <- cbind(new.data.send,
-                       Interaction_LvsO$logFC,Interaction_LvsO$P.Value,Interaction_LvsO$adj.P.Val,
-                       Interaction_LvsT$logFC,Interaction_LvsT$P.Value,Interaction_LvsT$adj.P.Val,
-                       Interaction_OvsT$logFC,Interaction_OvsT$P.Value,Interaction_OvsT$adj.P.Val,
+                       Interaction_LvsO$logFC,Interaction_LvsO$P.Value,Interaction_LvsO$Xiao,
+                       Interaction_LvsT$logFC,Interaction_LvsT$P.Value,Interaction_LvsT$Xiao,
+                       Interaction_OvsT$logFC,Interaction_OvsT$P.Value,Interaction_OvsT$Xiao,
                        Interaction_main$P.Value,Interaction_main$adj.P.Val)
-colnames(new.data.send)[114:124] <- c("Interaction.Obese.vs.Lean.LogFC","Interaction.Obese.vs.Lean.Pval","Interaction.Obese.vs.Lean.adj Pval",
-                                       "Interaction.T2D.vs.Lean.LogFC","Interaction.T2D.vs.Lean.Pval","Interaction.T2D.vs.Lean.adj Pval",
-                                       "Interaction.T2D.vs.Obese.LogFC","Interaction.T2D.vs.Obese.Pval","Interaction.T2D.vs.Obese.adj Pval",
+colnames(new.data.send)[114:124] <- c("Interaction.Obese.vs.Lean.LogFC","Interaction.Obese.vs.Lean.Pval","Interaction.Obese.vs.Lean.Xiao correction",
+                                       "Interaction.T2D.vs.Lean.LogFC","Interaction.T2D.vs.Lean.Pval","Interaction.T2D.vs.Lean.Xiao correction",
+                                       "Interaction.T2D.vs.Obese.LogFC","Interaction.T2D.vs.Obese.Pval","Interaction.T2D.vs.Obese.Xiao correction",
                                        "Interaction.main.Pval","Interaction.main.adj Pval")
-new.data.send <- cbind(new.data.send, sendData[,110:111])
+
+new.data.send <- cbind(new.data.send, colnames(Exprs_adipose_imputed), geneSymbols)
+colnames(new.data.send)[125:126] <- c("Protein Names", "Gene Names") 
 
 namesprot <- cbind(clinical_data[,2], paste(clinical_data$ID,clinical_data$Condition, sep = "_"))
 namesprot <- namesprot[order(match(namesprot[,1], colnames(new.data.send)[1:91])),]
@@ -831,58 +1044,228 @@ write.table(new.data.send,"HIIT_adipose_Allinfo.tsv",append = F, sep = "\t",dec 
 
 #Changing Protein accession ID's to Gene symbols:
 geneSymbols <- mapIds(org.Hs.eg.db, keys=rownames(Exprs_adipose), column="SYMBOL", keytype="ACCNUM", multiVals="first")
-rownames(Exprs_adipose) <- geneSymbols
 
 # Protein accession ID Q8IXS6 and Q9Y2D5 are mapped by madIds function to "PALM2AKAP2"
 # However could as well be PALM2 and AKAP2 respectively. To simplify further analyses these
 # will be changed.
-which(rownames(Exprs_adipose) == "PALM2AKAP2")
-rownames(Exprs_adipose)[1575] <- "PALM2"  #Q8IXS6
-rownames(Exprs_adipose)[1966] <- "AKAP2"  #Q9Y2D5 
+geneSymbols[1575] <- "PALM2"#Q8IXS6
+geneSymbols[1966] <- "AKAP2"#Q9Y2D5 
+
+Effecttrain_main$geneName = geneSymbols
+Interaction_main$geneName = geneSymbols
+
 
 #Volcano plot pre post
   #Lean
 Effecttrain_Lean$sig <- "NO"
-Effecttrain_Lean$sig[Effecttrain_Lean$adj.P.Val <= 0.05] <- "+" 
+Effecttrain_Lean$sig[Effecttrain_Lean$Xiao <= 0.05 & Effecttrain_Lean$logFC >= 0] <- "+" 
+Effecttrain_Lean$sig[Effecttrain_Lean$Xiao <= 0.05 & Effecttrain_Lean$logFC <= 0] <- "-"
 Effecttrain_Lean$newID <- NA
-Effecttrain_Lean$newID[Effecttrain_Lean$adj.P.Val <= 0.05] <- geneSymbols[Effecttrain_Lean$adj.P.Val <= 0.05]  
+Effecttrain_Lean$newID[Effecttrain_Lean$Xiao <= 0.05] <- geneSymbols[Effecttrain_Lean$Xiao <= 0.05]  
 
-LeanPlot <- ggplot(Effecttrain_Lean, aes(logFC, -log10(adj.P.Val), color = adj.P.Val <= 0.05, label = newID)) + 
-  geom_point() + 
+LeanPlot <- ggplot(Effecttrain_Lean, aes(logFC, -log10(P.Value), color = sig, label = newID)) + 
+  geom_point(aes(alpha = 0.99)) + 
   geom_text_repel() + 
   theme_minimal()+
-  labs(title = "Lean train effect", y = "-log10(Pvalue)") + 
-  theme(plot.title = element_text(hjust = 0.5))
+  labs(title = "Lean train effect", y = "-log10(P.Value)") + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_color_manual(values = c("#440154FF", "#55C667FF", "gray")) + 
+  guides(alpha = "none")
 
   #Obese
 Effecttrain_Obese$sig <- "NO"
-Effecttrain_Obese$sig[Effecttrain_Obese$adj.P.Val <= 0.05] <- "+" 
+Effecttrain_Obese$sig[Effecttrain_Obese$Xiao <= 0.05 & Effecttrain_Obese$logFC >= 0] <- "+" 
+Effecttrain_Obese$sig[Effecttrain_Obese$Xiao <= 0.05 & Effecttrain_Obese$logFC <= 0] <- "-" 
 Effecttrain_Obese$newID <- NA
-Effecttrain_Obese$newID[Effecttrain_Obese$adj.P.Val <= 0.05] <- geneSymbols[Effecttrain_Obese$adj.P.Val <= 0.05]  
+Effecttrain_Obese$newID[Effecttrain_Obese$Xiao <= 0.05] <- geneSymbols[Effecttrain_Obese$Xiao <= 0.05]  
 
-ObesePlot <- ggplot(Effecttrain_Obese, aes(logFC, -log10(adj.P.Val), color = adj.P.Val <= 0.05, label = newID)) + 
-  geom_point() + 
+ObesePlot <- ggplot(Effecttrain_Obese, aes(logFC, -log10(P.Value), color = sig, label = newID)) + 
+  geom_point(aes(alpha = 0.99)) + 
   geom_text_repel() + 
   theme_minimal()+
-  labs(title = "Obese train effect", y = "-log10(Pvalue)") + 
-  theme(plot.title = element_text(hjust = 0.5))
+  labs(title = "Obese train effect", y = "-log10(P.Value)") + 
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_color_manual(values = c("#440154FF", "#55C667FF", "gray")) + 
+  guides(alpha = "none")
   
   #T2D
 Effecttrain_T2D$sig <- "NO"
-Effecttrain_T2D$sig[Effecttrain_T2D$adj.P.Val <= 0.05] <- "+" 
+Effecttrain_T2D$sig[Effecttrain_T2D$Xiao <= 0.05 & Effecttrain_T2D$logFC >= 0] <- "+" 
+Effecttrain_T2D$sig[Effecttrain_T2D$Xiao <= 0.05 & Effecttrain_T2D$logFC <= 0] <- "-" 
 Effecttrain_T2D$newID <- NA
-Effecttrain_T2D$newID[Effecttrain_T2D$adj.P.Val <= 0.05] <- geneSymbols[Effecttrain_T2D$adj.P.Val <= 0.05]  
+Effecttrain_T2D$newID[Effecttrain_T2D$Xiao <= 0.05] <- geneSymbols[Effecttrain_T2D$Xiao <= 0.05]  
 
-T2DPlot <- ggplot(Effecttrain_T2D, aes(logFC, -log10(adj.P.Val), color = adj.P.Val <= 0.05, label = newID)) + 
-  geom_point() + 
+T2DPlot <- ggplot(Effecttrain_T2D, aes(logFC, -log10(P.Value), color = sig, label = newID)) + 
+  geom_point(aes(alpha = 0.99)) + 
+  geom_text_repel() +
+  theme_minimal()+
+  labs(title = "T2D train effect", y = "-log10(P.Value)") + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_color_manual(values = c("#440154FF", "#55C667FF", "gray")) + 
+  guides(alpha = "none")
+
+ggarrange(ggarrange(LeanPlot, ObesePlot, nrow = 2), T2DPlot)
+
+#Interaction
+  #Lean VS Obese
+Interaction_LvsO$sig <- "NO"
+Interaction_LvsO$sig[Interaction_LvsO$Xiao <= 0.05 & Interaction_LvsO$logFC >= 0] <- "+" 
+Interaction_LvsO$sig[Interaction_LvsO$Xiao <= 0.05 & Interaction_LvsO$logFC <= 0] <- "-"
+Interaction_LvsO$newID <- NA
+Interaction_LvsO$newID[Interaction_LvsO$Xiao <= 0.05] <- geneSymbols[Interaction_LvsO$Xiao <= 0.05]  
+
+LvsOPlot_I <- ggplot(Interaction_LvsO, aes(logFC, -log10(P.Value), color = sig, label = newID)) + 
+  geom_point(aes(alpha = 0.99)) + 
   geom_text_repel() + 
   theme_minimal()+
-  labs(title = "T2D train effect", y = "-log10(Pvalue)") + 
-  theme(plot.title = element_text(hjust = 0.5))
+  labs(title = "Lean vs Obese Interaction", y = "-log10(P.Value)") + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_color_manual(values = c("#440154FF", "#55C667FF", "gray")) + 
+  guides(alpha = "none")
 
-  #Venn sig
+  #Obese vs T2D
+Interaction_OvsT$sig <- "NO"
+Interaction_OvsT$sig[Interaction_OvsT$Xiao <= 0.05 & Interaction_OvsT$logFC >= 0] <- "+" 
+Interaction_OvsT$sig[Interaction_OvsT$Xiao <= 0.05 & Interaction_OvsT$logFC <= 0] <- "-" 
+Interaction_OvsT$newID <- NA
+Interaction_OvsT$newID[Interaction_OvsT$Xiao <= 0.05] <- geneSymbols[Interaction_OvsT$Xiao <= 0.05]  
 
-VennIndiv <- ggvenn::ggvenn(list(Lean = Effecttrain_Lean$newID[Effecttrain_Lean$adj.P.Val <= 0.05], Obese = Effecttrain_Obese$newID[Effecttrain_Obese$adj.P.Val <= 0.05], T2D = Effecttrain_T2D$newID[Effecttrain_T2D$adj.P.Val <= 0.05]))
+OvsTPlot_I <- ggplot(Interaction_OvsT, aes(logFC, -log10(P.Value), color = sig, label = newID)) + 
+  geom_point(aes(alpha = 0.99)) + 
+  geom_text_repel() + 
+  theme_minimal()+
+  labs(title = "Obese vs T2D Interaction", y = "-log10(P.Value)") + 
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_color_manual(values = c("#440154FF", "#55C667FF", "gray")) + 
+  guides(alpha = "none")
+
+  #Lean VS T2D
+Interaction_LvsT$sig <- "NO"
+Interaction_LvsT$sig[Interaction_LvsT$Xiao <= 0.05 & Interaction_LvsT$logFC >= 0] <- "+" 
+Interaction_LvsT$sig[Interaction_LvsT$Xiao <= 0.05 & Interaction_LvsT$logFC <= 0] <- "-" 
+Interaction_LvsT$newID <- NA
+Interaction_LvsT$newID[Interaction_LvsT$Xiao <= 0.05] <- geneSymbols[Interaction_LvsT$Xiao <= 0.05]  
+
+LvsTPlot_I <- ggplot(Interaction_LvsT, aes(logFC, -log10(P.Value), color = sig, label = newID)) + 
+  geom_point(aes(alpha = 0.99)) + 
+  geom_text_repel() +
+  theme_minimal()+
+  labs(title = "Lean VS T2D Interaction", y = "-log10(P.Value)") + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_color_manual(values = c("#440154FF", "#55C667FF", "gray")) + 
+  guides(alpha = "none")
+  
+ggarrange(ggarrange(LvsOPlot_I, OvsTPlot_I, ncol = 2), LvsTPlot_I, nrow = 2)
+
+#Group
+#Lean VS Obese
+OBESE_vs_LEAN$sig <- "NO"
+OBESE_vs_LEAN$sig[OBESE_vs_LEAN$Xiao <= 0.05 & OBESE_vs_LEAN$logFC >= 0] <- "+" 
+OBESE_vs_LEAN$sig[OBESE_vs_LEAN$Xiao <= 0.05 & OBESE_vs_LEAN$logFC <= 0] <- "-"
+OBESE_vs_LEAN$newID <- NA
+OBESE_vs_LEAN$newID[OBESE_vs_LEAN$Xiao <= 0.05] <- geneSymbols[OBESE_vs_LEAN$Xiao <= 0.05]  
+
+OvsLPlot_G <- ggplot(OBESE_vs_LEAN, aes(logFC, -log10(P.Value), color = sig, label = newID)) + 
+  geom_point(aes(alpha = 0.99)) + 
+  geom_text_repel() + 
+  theme_minimal()+
+  labs(title = "Obese vs Lean Group Effect", y = "-log10(P.Value)") + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_color_manual(values = c("#440154FF", "#55C667FF", "gray")) + 
+  guides(alpha = "none")
+
+#Obese vs T2D
+T2D_vs_OBESE$sig <- "NO"
+T2D_vs_OBESE$sig[T2D_vs_OBESE$Xiao <= 0.05 & T2D_vs_OBESE$logFC >= 0] <- "+" 
+T2D_vs_OBESE$sig[T2D_vs_OBESE$Xiao <= 0.05 & T2D_vs_OBESE$logFC <= 0] <- "-" 
+T2D_vs_OBESE$newID <- NA
+T2D_vs_OBESE$newID[T2D_vs_OBESE$Xiao <= 0.05] <- geneSymbols[T2D_vs_OBESE$Xiao <= 0.05]  
+
+TvsOPlot_G <- ggplot(T2D_vs_OBESE, aes(logFC, -log10(P.Value), color = sig, label = newID)) + 
+  geom_point(aes(alpha = 0.99)) + 
+  geom_text_repel() + 
+  theme_minimal()+
+  labs(title = "T2D vs Obese Group Effect", y = "-log10(P value)") + 
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_color_manual(values = c("#440154FF", "#55C667FF", "gray")) + 
+  guides(alpha = "none")
+
+#Lean VS T2D
+T2D_vs_LEAN$sig <- "NO"
+T2D_vs_LEAN$sig[T2D_vs_LEAN$Xiao <= 0.05 & T2D_vs_LEAN$logFC >= 0] <- "+" 
+T2D_vs_LEAN$sig[T2D_vs_LEAN$Xiao <= 0.05 & T2D_vs_LEAN$logFC <= 0] <- "-" 
+T2D_vs_LEAN$newID <- NA
+T2D_vs_LEAN$newID[T2D_vs_LEAN$Xiao <= 0.05] <- geneSymbols[T2D_vs_LEAN$Xiao <= 0.05]  
+
+TvsLPlot_G <- ggplot(T2D_vs_LEAN, aes(logFC, -log10(P.Value), color = sig, label = newID)) + 
+  geom_point(aes(alpha = 0.99)) + 
+  geom_text_repel() +
+  theme_minimal()+
+  labs(title = "T2D VS Lean Group Effect", y = "-log10(P.Value)") + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_color_manual(values = c("#440154FF", "#55C667FF", "gray")) + 
+  guides(alpha = "none")
+
+ggarrange(ggarrange(OvsLPlot_G, TvsOPlot_G, ncol = 2), TvsLPlot_G, nrow = 2)
+
+
+#Venn sig Train
+eulerr_options(pointsize=14)
+
+
+Effecttrain_Lean$newID <- geneSymbols
+
+Effecttrain_Obese$newID<- geneSymbols
+
+Effecttrain_T2D$newID <- geneSymbols
+
+VennIndiv_Training <- ggvenn::ggvenn(list(Lean = Effecttrain_Lean$newID[Effecttrain_Lean$Xiao <= 0.05], Obese = Effecttrain_Obese$newID[Effecttrain_Obese$Xiao <= 0.05], T2D = Effecttrain_T2D$newID[Effecttrain_T2D$Xiao <= 0.05]))
+
+#Proportional Venn
+VennT <- euler(c(Lean = 11, Obese = 11, T2D = 12,
+                 "Lean&T2D" = 2, "Lean&Obese" = 0, "T2D&Obese" = 1))
+VennIndiv_Training_prop <- plot(VennT, quantities = T, fills = c("#FDE725FF", "#414487FF", "#22A884FF"), 
+                                alpha = 0.9, main = "Effect Training")
+
+  
+  #Venn sig Inter
+
+Interaction_LvsO$newID <- geneSymbols 
+
+Interaction_LvsT$newID <- geneSymbols
+
+Interaction_OvsT$newID <- geneSymbols  
+
+VennIndiv_Interaction <- ggvenn::ggvenn(list(Lean_vs_Obese = Interaction_LvsO$newID[Interaction_LvsO$Xiao <= 0.05], Lean_vs_T2D = Interaction_LvsT$newID[Interaction_LvsT$Xiao <= 0.05], Obese_vs_T2D = Interaction_OvsT$newID[Interaction_OvsT$Xiao <= 0.05]))
+  
+#Proportional Venn
+VennI <- euler(c("Lean vs Obese" = 11, "Obese vs T2D" = 25, "Lean vs T2D" = 34,
+                 "Lean vs Obese&Obese vs T2D" = 4, "Lean vs Obese&Lean vs T2D" = 3, "Lean vs T2D&Obese vs T2D" = 1,
+                 "Lean vs Obese&Obese vs T2D&Lean vs T2D" = 1))
+VennIndiv_Interaction_prop <- plot(VennI, quantities = T, fills = c("#FDE725FF", "#414487FF", "#22A884FF"), 
+                                   alpha = 0.9, main = "Interaction")
+
+
+  #venn Diagram Groups
+OBESE_vs_LEAN$newID <- geneSymbols
+
+T2D_vs_LEAN$newID <- geneSymbols
+
+T2D_vs_OBESE$newID <- geneSymbols
+
+VennIndiv_Groups <- ggvenn::ggvenn(list(OBESE_vs_LEAN = OBESE_vs_LEAN$newID[OBESE_vs_LEAN$Xiao <= 0.05], T2D_vs_LEAN = T2D_vs_LEAN$newID[T2D_vs_LEAN$Xiao <= 0.05], T2D_vs_OBESE = T2D_vs_OBESE$newID[T2D_vs_OBESE$Xiao <= 0.05]))
+
+#Proportional Venn
+VennG <- euler(c("Obese vs Lean" = 10, "T2D vs Obese" = 13, "T2D vs Lean" = 38,
+                 "Obese vs Lean&T2D vs Obese" = 2, "Obese vs Lean&T2D vs Lean" = 4, "T2D vs Lean&T2D vs Obese" = 11))
+VennIndiv_Group_prop <- plot(VennG, quantities = T, fills = c("#FDE725FF", "#414487FF", "#22A884FF"), 
+                             alpha = 0.9, main = "Effect Groups")
+
+#Add all gene_names main
+Effecttrain_main$newID <- geneSymbols
+Interaction_main$newID <- geneSymbols
+mainEffect_GROUP$newID <- geneSymbols
 
 #Arrange
-ggarrange(LeanPlot, ObesePlot, T2DPlot, VennIndiv)
+ggarrange(VennIndiv_Training, VennIndiv_Interaction, VennIndiv_Groups)
+ggarrange(plotlist = list(VennIndiv_Training_prop, ggarrange(VennIndiv_Interaction_prop,VennIndiv_Group_prop)), nrow = 2)
