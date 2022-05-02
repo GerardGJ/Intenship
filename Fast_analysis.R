@@ -507,12 +507,18 @@ for(i in 1:6){
   }
 }
 Pair_no_leaf <- unique(Pair_no_leaf)
+result_GIR$names <- NA
+result_GIR$names[result_GIR$p.adj < 0.05] <- result_GIR$Protein[result_GIR$p.adj < 0.05]
 
-ggplot(result_GIR, aes(as.numeric(correlation), -log10(pVal), color = pVal <= 1e-04)) + geom_point(aes(alpha = 0.4)) + 
+ggplot(result_GIR, aes(as.numeric(correlation), -log10(pVal), color = pVal <= 1e-04, label = names)) + 
+  geom_point(aes(alpha = 0.4)) + 
   theme_minimal() + 
   labs(x = "R value") + 
   geom_hline(yintercept = -log10(1.5e-4), color = "red") + 
-  scale_x_continuous(limits = c(-0.6,0.6), seq(-0.6, 0.6, by = 0.3) , name = "R-Value")
+  scale_x_continuous(limits = c(-0.6,0.6), seq(-0.6, 0.6, by = 0.3) , name = "R-Value") +
+  scale_color_manual(values = c("gray","#39568CFF" )) + 
+  guides(alpha = "none") + 
+  geom_text_repel()
 
 #### Correlation plot Sig ####
 resultall <- rbind(result_BMI,result_FFM,result_FM,
@@ -524,39 +530,47 @@ Exprs_adipose_noBatch_notImp_ordered <- Exprs_adipose_noBatch_notImp[order(match
 Group = as.factor(clinical_data_noNA$Group)
 
 plot1 <- ggplot(mapping = aes(clinical_data_noNA$BMI1,Exprs_adipose_noBatch_notImp_ordered[,"O75521"])) +
-  geom_point(aes(color = Group)) + 
+  geom_point(aes(color = Group, alpha = 0.9), size = 3) +  
   theme_minimal() +
   geom_smooth(method = "lm") +
   annotate("text", label = paste("r = 0.661"), x = 35, y = 2.5) + 
-  annotate("text", label = paste("pVal = 0.0067"), x = 35, y = 2) +   
+  annotate("text", label = paste("adj. pVal = 0.0067"), x = 35, y = 2) +   
   labs(title = "BMI vs ECI2", x = "BMI", y = "ECI2") +
+  scale_color_manual("Groups" ,values = c("#73D055FF", "#FDE725FF", "#404788FF"), labels = c("Lean", "Obese", "T2D")) +
+  guides(alpha = "none") +
   theme(plot.title = element_text(hjust = 0.5))
   
 plot2 <- ggplot(mapping = aes(clinical_data_noNA$GIR1,Exprs_adipose_noBatch_notImp_ordered[,"O95197"])) +
-  geom_point(aes(color = Group)) + 
+  geom_point(aes(color = Group, alpha = 0.9), size = 3) +  
   theme_minimal() +
   geom_smooth(method = "lm") +
   annotate("text", label = paste("r = -0.572"), x = 600, y = 1) + 
-  annotate("text", label = paste("pVal = 0.0215"), x = 600, y = 0.75) +   
+  annotate("text", label = paste("adj. pVal = 0.0215"), x = 600, y = 0.75) +   
   labs(title = "GIR vs RTN3", x = "GIR", y = "RTN3") +
+  scale_color_manual("Groups" ,values = c("#73D055FF", "#FDE725FF", "#404788FF"), labels = c("Lean", "Obese", "T2D")) +
+  guides(alpha = "none") +
   theme(plot.title = element_text(hjust = 0.5))
 
 plot3 <- ggplot(mapping = aes(clinical_data_noNA$GIR1,Exprs_adipose_noBatch_notImp_ordered[,"P04075"])) +
-  geom_point(aes(color = Group)) + 
+  geom_point(aes(color = Group, alpha = 0.9), size = 3) +  
   theme_minimal() +
   geom_smooth(method = "lm") +
   annotate("text", label = paste("r = -0.592"), x = 600, y = 3.75) + 
-  annotate("text", label = paste("pVal = 0.0214"), x = 600, y = 3.5) +   
+  annotate("text", label = paste("adj. pVal = 0.0214"), x = 600, y = 3.5) +   
   labs(title = "GIR vs ALDOA", x = "GIR", y = "ALDOA") +
+  scale_color_manual("Groups" ,values = c("#73D055FF", "#FDE725FF", "#404788FF"), labels = c("Lean", "Obese", "T2D")) +
+  guides(alpha = "none") +
   theme(plot.title = element_text(hjust = 0.5))
 
 plot4 <- ggplot(mapping = aes(clinical_data_noNA$GIR1,Exprs_adipose_noBatch_notImp_ordered[,"P10620"])) +
-  geom_point(aes(color = Group)) + 
+  geom_point(aes(color = Group, alpha = 0.9), size = 3) +  
   theme_minimal() +
   geom_smooth(method = "lm") +
   annotate("text", label = paste("r = -0.590"), x = 600, y = 3) + 
-  annotate("text", label = paste("pVal = 0.0214"), x = 600, y = 2.5) +   
+  annotate("text", label = paste("adj. pVal = 0.0214"), x = 600, y = 2.5) +   
   labs(title = "GIR vs MGST1", x = "GIR", y = "MGST1") +
+  scale_color_manual("Groups" ,values = c("#73D055FF", "#FDE725FF", "#404788FF"), labels = c("Lean", "Obese", "T2D")) +
+  guides(alpha = "none") +
   theme(plot.title = element_text(hjust = 0.5))
 
 plot5 <- ggplot(mapping = aes(clinical_data_noNA$GIR1,Exprs_adipose_noBatch_notImp_ordered[,"P11310"])) +
@@ -564,30 +578,35 @@ plot5 <- ggplot(mapping = aes(clinical_data_noNA$GIR1,Exprs_adipose_noBatch_notI
   theme_minimal() +
   geom_smooth(method = "lm") +
   annotate("text", label = paste("r = -0.582"), x = 600, y = 1.5) + 
-  annotate("text", label = paste("pVal = 0.0214"), x = 600, y = 1) +   
+  annotate("text", label = paste("adj. pVal = 0.0214"), x = 600, y = 1) +   
   labs(title = "GIR vs ACADM", x = "GIR", y = "ACADM") +
+  scale_color_manual("Groups" ,values = c("#73D055FF", "#FDE725FF", "#404788FF"), labels = c("Lean", "Obese", "T2D")) +
+  guides(alpha = "none") +
   theme(plot.title = element_text(hjust = 0.5))
 
 plot6 <- ggplot(mapping = aes(clinical_data_noNA$GIR1,Exprs_adipose_noBatch_notImp_ordered[,"Q99685"])) +
-  geom_point(aes(color = Group)) + 
+  geom_point(aes(color = Group, alpha = 0.9), size = 3) + 
   theme_minimal() +
   geom_smooth(method = "lm") +
   annotate("text", label = paste("r = -0.581"), x = 600, y = 1.5) + 
-  annotate("text", label = paste("pVal = 0.0214"), x = 600, y = 1.25) +   
+  annotate("text", label = paste("adj. pVal = 0.0214"), x = 600, y = 1.25) +   
   labs(title = "GIR vs MGLL", x = "GIR", y = "MGLL") +
+  scale_color_manual("Groups" ,values = c("#73D055FF", "#FDE725FF", "#404788FF"), labels = c("Lean", "Obese", "T2D")) +
+  guides(alpha = "none") +
   theme(plot.title = element_text(hjust = 0.5))
 
 plot7 <- ggplot(mapping = aes(clinical_data_noNA$GIR1,Exprs_adipose_noBatch_notImp_ordered[,"Q9NQC3"])) +
-  geom_point(aes(color = Group)) + 
+  geom_point(aes(color = Group, alpha = 0.9), size = 3) +
   theme_minimal() +
   geom_smooth(method = "lm") +
   annotate("text", label = paste("r = -0.572"), x = 600, y = 2.5) + 
-  annotate("text", label = paste("pVal = 0.0215"), x = 600, y = 2.25) +   
+  annotate("text", label = paste("adj. pVal = 0.0215"), x = 600, y = 2.25) +   
   labs(title = "GIR vs RTN4", x = "GIR", y = "RTN4") +
+  scale_color_manual("Groups" ,values = c("#73D055FF", "#FDE725FF", "#404788FF"), labels = c("Lean", "Obese", "T2D")) +
+  guides(alpha = "none") +
   theme(plot.title = element_text(hjust = 0.5))
 
-ggarrange(plot1, plot2, plot3, plot4)
-ggarrange(plot5, plot6, plot7)
+ggarrange(plot2, plot3, plot4, plot5, plot6, plot7)
 
 #### Graph ####
 # using this df small_test_Delta_sig
@@ -642,13 +661,14 @@ for(prot in unique(replace$ACCNUM)){
 nodes[7:241,1] <- NA#replace_short
 graph <- tbl_graph(nodes = nodes, edges = edges, directed = FALSE)
 
-plot_pair <- ggraph(graph = graph)+
-  geom_node_point(size = 1) +                                         
+plot_pair <- ggraph(graph = graph) +
   geom_edge_link(aes(color = edges$CORRELATION < 0, edge_width = abs(edges$CORRELATION))) +
+  geom_node_point(size = 1) +                                         
   scale_edge_width(range = c(0.25, 1.5)) +
   geom_node_text(aes(label = name, size = 4, fontface = "bold"), nudge_y = 0, nudge_x = 0,)+
-  theme_void() + theme(legend.position = "none") +
-  labs(title = "Pairwise graph")
+  theme_void() + theme(legend.position = "none", plot.title = element_text(hjust = 0.5) ) +
+  labs(title = "Pairwise graph") +
+  scale_edge_color_manual(values = c("#FDE725FF","#73D055FF"))
 plot_pair
 #### ORA ####
 
@@ -724,6 +744,36 @@ for(i in seq_along(community_list_pairwise)){
   )
 }
 
+enrichment_result_pairwise_GOCC <- list()
+for(i in seq_along(community_list_pairwise)){
+  tryCatch(
+    expr = {
+      enrichment_result_pairwise_GOCC[[names(community_list_pairwise)[i]]] <- enrichGO(gene = community_list_pairwise[[i]],
+                                                                                  universe = universe_short[,1],
+                                                                                  pvalueCutoff = 0.05,
+                                                                                  OrgDb = org.Hs.eg.db,
+                                                                                  ont = "CC")@result
+    }, error = function(e){
+      print("Error")
+    }
+  )
+}
+
+
+enrichment_result_pairwise_Kegg <- list()
+for(i in seq_along(community_list_pairwise)){
+  tryCatch(
+    expr = {
+      enrichment_result_pairwise_Kegg[[names(community_list_pairwise)[i]]] <- enrichKEGG(gene = community_list_pairwise[[i]],
+                                                                                       universe = universe_short[,1],
+                                                                                       pvalueCutoff = 0.05,
+                                                                                       organism = "hsa")@result
+    }, error = function(e){
+      print("Error")
+    }
+  )
+}
+
 #### Plot ORA ####
 delta_df_plot <- data.frame()
 for(i in seq_along(enrichment_result_delta)){
@@ -746,7 +796,7 @@ for(i in seq_along(enrichment_result_pairwise)){
   pair_df_plot <- rbind(pair_df_plot, merge(enrichment_result_pairwise[[i]][1:5,], clinical))
 }
 
-pair_df_plot <- pair_df_plot %>% filter(GeneRatio != "1/10")
+pair_df_plot <- pair_df_plot %>% filter(GeneRatio != "1/10") %>% filter(GeneRatio != "1/12")
 
 ggplot(pair_df_plot, aes(y, Description)) + 
   geom_point(aes(color = pvalue, size = Count)) + 
@@ -755,8 +805,54 @@ ggplot(pair_df_plot, aes(y, Description)) +
   theme(axis.ticks.x = element_blank(), axis.text.x = element_blank()) + 
   labs(y = "Pathways", x = "Clinical Values") 
 
-#### Enrichment analysis on correlation Pairwise ####
-#annotate:
+#GOMF
+pair_df_plot_GOMF <- data.frame()
+for(i in seq_along(enrichment_result_pairwise_GOMF)){
+  clinical <- names(enrichment_result_pairwise_GOMF)[i]
+  pair_df_plot_GOMF <- rbind(pair_df_plot_GOMF, merge(enrichment_result_pairwise_GOMF[[i]][1:5,], clinical))
+}
+
+pair_df_plot_GOMF <- pair_df_plot_GOMF %>% filter(GeneRatio != "1/16")
+
+ggplot(pair_df_plot_GOMF, aes(y, Description)) + 
+  geom_point(aes(color = pvalue, size = Count)) + 
+  scale_color_viridis_c() + 
+  facet_wrap(~y, scales = "free_x") +
+  theme(axis.ticks.x = element_blank(), axis.text.x = element_blank()) + 
+  labs(y = "Pathways", x = "Clinical Values")
+
+#GOBP
+pair_df_plot_GOBP <- data.frame()
+for(i in seq_along(enrichment_result_pairwise_GOBP)){
+  clinical <- names(enrichment_result_pairwise_GOBP)[i]
+  pair_df_plot_GOBP <- rbind(pair_df_plot_GOBP, merge(enrichment_result_pairwise_GOBP[[i]][1:5,], clinical))
+}
+
+ggplot(pair_df_plot_GOBP, aes(y, Description)) + 
+  geom_point(aes(color = pvalue, size = Count)) + 
+  scale_color_viridis_c() + 
+  facet_wrap(~y, scales = "free_x") +
+  theme(axis.ticks.x = element_blank(), axis.text.x = element_blank()) + 
+  labs(y = "Pathways", x = "Clinical Values")
+
+#GOCC
+pair_df_plot_GOCC <- data.frame()
+for(i in seq_along(enrichment_result_pairwise_GOCC)){
+  clinical <- names(enrichment_result_pairwise_GOCC)[i]
+  pair_df_plot_GOCC <- rbind(pair_df_plot_GOCC, merge(enrichment_result_pairwise_GOCC[[i]][1:5,], clinical))
+}
+
+pair_df_plot_GOCC <- pair_df_plot_GOCC %>% filter(GeneRatio != "1/13")
+
+ggplot(pair_df_plot_GOCC, aes(y, Description)) + 
+  geom_point(aes(color = pvalue, size = Count)) + 
+  scale_color_viridis_c() + 
+  facet_wrap(~y, scales = "free_x") +
+  theme(axis.ticks.x = element_blank(), axis.text.x = element_blank()) + 
+  labs(y = "Pathways", x = "Clinical Values")
+
+
+#### Annotation ####
 matrix_annotations <- read.table(gzfile("/Users/Gerard/Desktop/Annotations/mainAnnot.homo_sapiens.txt.gz"), header = T, sep = "\t", fill = T)
 matrix_annotations_GOBP = data.frame()
 matrix_annotations_GOMF = data.frame()
@@ -789,22 +885,11 @@ for(Protein.IDs in rownames(Exprs_adipose)){
   }
 }
 
-#Enrichment
 matrix_annotations_GOBP <- aggregate(matrix_annotations_GOBP$y, list(matrix_annotations_GOBP$x), paste ,collapse=" ")
-toGSEA_r_GIR <- as.numeric(result_GIR$correlation)
-names(toGSEA_r_GIR) <- result_GIR$Protein
-toGSEA_r_GIR <- toGSEA_r_GIR[order(toGSEA_r_GIR, decreasing = F)]
-
 toGSEA_GOBP <- list()
 for(i in seq_along(rownames(matrix_annotations_GOBP))){
   toGSEA_GOBP[[matrix_annotations_GOBP[i,1]]] <- unlist(strsplit(x = matrix_annotations_GOBP$x[[i]], split = " "))
 }
-
-fgseaRes_GOBP_pair <- fgsea(pathways = toGSEA_GOBP, 
-                            stats    = toGSEA_r_GIR,
-                            eps      = 0.0,
-                            minSize  = 1,
-                            maxSize  = 500)
 
 matrix_annotations_GOMF <- aggregate(matrix_annotations_GOMF$y, list(matrix_annotations_GOMF$x), paste ,collapse=" ")
 toGSEA_GOMF <- list()
@@ -812,26 +897,11 @@ for(i in seq_along(rownames(matrix_annotations_GOMF))){
   toGSEA_GOMF[[matrix_annotations_GOMF[i,1]]] <- unlist(strsplit(x = matrix_annotations_GOMF$x[[i]], split = " "))
 }
 
-
-fgseaRes_GOMF_pair <- fgsea(pathways = toGSEA_GOMF, 
-                            stats    = toGSEA_r_GIR,
-                            eps      = 0.0,
-                            minSize  = 1,
-                            maxSize  = 500)
-
-
 matrix_annotations_GOCC <- aggregate(matrix_annotations_GOCC$y, list(matrix_annotations_GOCC$x), paste ,collapse=" ")
 toGSEA_GOCC <- list()
 for(i in seq_along(rownames(matrix_annotations_GOCC))){
   toGSEA_GOCC[[matrix_annotations_GOCC[i,1]]] <- unlist(strsplit(x = matrix_annotations_GOCC$x[[i]], split = " "))
 }
-
-
-fgseaRes_GOCC_pair <- fgsea(pathways = toGSEA_GOCC, 
-                            stats    = toGSEA_r_GIR,
-                            eps      = 0.0,
-                            minSize  = 1,
-                            maxSize  = 500)
 
 matrix_annotations_KEGG <- aggregate(matrix_annotations_KEGG$y, list(matrix_annotations_KEGG$x), paste ,collapse=" ")
 toGSEA_KEGG <- list()
@@ -839,6 +909,29 @@ for(i in seq_along(rownames(matrix_annotations_KEGG))){
   toGSEA_KEGG[[matrix_annotations_KEGG[i,1]]] <- unlist(strsplit(x = matrix_annotations_KEGG$x[[i]], split = " "))
 }
 
+#### Enrichment analysis on correlation Pairwise ####
+#Enrichment
+toGSEA_r_GIR <- as.numeric(result_GIR$correlation)
+names(toGSEA_r_GIR) <- result_GIR$Protein
+toGSEA_r_GIR <- toGSEA_r_GIR[order(toGSEA_r_GIR, decreasing = F)]
+
+fgseaRes_GOBP_pair <- fgsea(pathways = toGSEA_GOBP, 
+                            stats    = toGSEA_r_GIR,
+                            eps      = 0.0,
+                            minSize  = 1,
+                            maxSize  = 500)
+
+fgseaRes_GOMF_pair <- fgsea(pathways = toGSEA_GOMF, 
+                            stats    = toGSEA_r_GIR,
+                            eps      = 0.0,
+                            minSize  = 1,
+                            maxSize  = 500)
+
+fgseaRes_GOCC_pair <- fgsea(pathways = toGSEA_GOCC, 
+                            stats    = toGSEA_r_GIR,
+                            eps      = 0.0,
+                            minSize  = 1,
+                            maxSize  = 500)
 
 fgseaRes_KEGG_pair <- fgsea(pathways = toGSEA_KEGG, 
                             stats    = toGSEA_r_GIR,
@@ -1053,7 +1146,7 @@ geneSymbols[1966] <- "AKAP2"#Q9Y2D5
 
 Effecttrain_main$geneName = geneSymbols
 Interaction_main$geneName = geneSymbols
-
+mainEffect_GROUP$geneName = geneSymbols
 
 #Volcano plot pre post
   #Lean
@@ -1104,7 +1197,6 @@ T2DPlot <- ggplot(Effecttrain_T2D, aes(logFC, -log10(P.Value), color = sig, labe
   scale_color_manual(values = c("#440154FF", "#55C667FF", "gray")) + 
   guides(alpha = "none")
 
-ggarrange(ggarrange(LeanPlot, ObesePlot, nrow = 2), T2DPlot)
 
 #Interaction
   #Lean VS Obese
@@ -1155,7 +1247,6 @@ LvsTPlot_I <- ggplot(Interaction_LvsT, aes(logFC, -log10(P.Value), color = sig, 
   scale_color_manual(values = c("#440154FF", "#55C667FF", "gray")) + 
   guides(alpha = "none")
   
-ggarrange(ggarrange(LvsOPlot_I, OvsTPlot_I, ncol = 2), LvsTPlot_I, nrow = 2)
 
 #Group
 #Lean VS Obese
@@ -1205,8 +1296,6 @@ TvsLPlot_G <- ggplot(T2D_vs_LEAN, aes(logFC, -log10(P.Value), color = sig, label
   theme(plot.title = element_text(hjust = 0.5)) + 
   scale_color_manual(values = c("#440154FF", "#55C667FF", "gray")) + 
   guides(alpha = "none")
-
-ggarrange(ggarrange(OvsLPlot_G, TvsOPlot_G, ncol = 2), TvsLPlot_G, nrow = 2)
 
 
 #Venn sig Train
@@ -1269,3 +1358,111 @@ mainEffect_GROUP$newID <- geneSymbols
 #Arrange
 ggarrange(VennIndiv_Training, VennIndiv_Interaction, VennIndiv_Groups)
 ggarrange(plotlist = list(VennIndiv_Training_prop, ggarrange(VennIndiv_Interaction_prop,VennIndiv_Group_prop)), nrow = 2)
+
+ggarrange(LeanPlot, ObesePlot, T2DPlot, VennIndiv_Training_prop)
+ggarrange(LvsOPlot_I, OvsTPlot_I, LvsTPlot_I,VennIndiv_Interaction_prop)
+ggarrange(OvsLPlot_G, TvsOPlot_G, TvsLPlot_G, VennIndiv_Group_prop)
+
+#### Gene Set Enrichment analysis ####
+
+#Effect of training:
+
+LogLean <- t(Effecttrain_Lean$logFC)
+names(LogLean) <- rownames(Exprs_adipose)
+LogLean <- LogLean[order(LogLean, decreasing = F)]
+
+fgseaLean_GOBP <- fgsea(pathways = toGSEA_GOBP, 
+                        stats    = LogLean)
+
+fgseaLean_GOCC <- fgsea(pathways = toGSEA_GOCC, 
+                        stats    = LogLean)
+
+fgseaLean_GOMF <- fgsea(pathways = toGSEA_GOMF, 
+                        stats    = LogLean)
+
+fgseaLean_KEGG <- fgsea(pathways = toGSEA_KEGG, 
+                            stats    = LogLean)
+
+
+LogObese <- t(Effecttrain_Obese$logFC)
+names(LogObese) <- rownames(Exprs_adipose)
+LogObese <- LogObese[order(LogObese, decreasing = F)]
+
+fgseaObese_GOBP <- fgsea(pathways = toGSEA_GOBP, 
+                        stats    = LogObese)
+
+fgseaObese_GOCC <- fgsea(pathways = toGSEA_GOCC, 
+                        stats    = LogObese)
+
+fgseaObese_GOMF <- fgsea(pathways = toGSEA_GOMF, 
+                        stats    = LogObese)
+
+fgseaObese_KEGG <- fgsea(pathways = toGSEA_KEGG, 
+                        stats    = LogObese)
+
+LogT2D <- t(Effecttrain_T2D$logFC)
+names(LogT2D) <- rownames(Exprs_adipose)
+LogT2D <- LogT2D[order(LogT2D, decreasing = F)]
+
+fgseaT2D_GOBP <- fgsea(pathways = toGSEA_GOBP, 
+                         stats    = LogT2D)
+
+fgseaT2D_GOCC <- fgsea(pathways = toGSEA_GOCC, 
+                         stats    = LogT2D)
+
+fgseaT2D_GOMF <- fgsea(pathways = toGSEA_GOMF, 
+                         stats    = LogT2D)
+
+fgseaT2D_KEGG <- fgsea(pathways = toGSEA_KEGG, 
+                         stats    = LogT2D)
+
+
+#Effect Interaction
+LogLvsO <- t(Interaction_LvsO$logFC)
+names(LogLvsO) <- rownames(Exprs_adipose)
+LogLvsO <- LogLvsO[order(LogLvsO, decreasing = F)]
+
+fgseaLvsO_GOBP <- fgsea(pathways = toGSEA_GOBP, 
+                        stats    = LogLvsO)
+
+fgseaLvsO_GOCC <- fgsea(pathways = toGSEA_GOCC, 
+                        stats    = LogLvsO)
+
+fgseaLvsO_GOMF <- fgsea(pathways = toGSEA_GOMF, 
+                        stats    = LogLvsO)
+
+fgseaLvsO_KEGG <- fgsea(pathways = toGSEA_KEGG, 
+                        stats    = LogLvsO)
+
+
+LogLvsT <- t(Interaction_LvsT$logFC)
+names(LogLvsT) <- rownames(Exprs_adipose)
+LogLvsT <- LogLvsT[order(LogLvsT, decreasing = F)]
+
+fgseaLvsT_GOBP <- fgsea(pathways = toGSEA_GOBP, 
+                         stats    = LogLvsT)
+
+fgseaLvsT_GOCC <- fgsea(pathways = toGSEA_GOCC, 
+                         stats    = LogLvsT)
+
+fgseaLvsT_GOMF <- fgsea(pathways = toGSEA_GOMF, 
+                         stats    = LogLvsT)
+
+fgseaLvsT_KEGG <- fgsea(pathways = toGSEA_KEGG, 
+                         stats    = LogLvsT)
+
+LogOvsT <- t(Interaction_OvsT$logFC)
+names(LogOvsT) <- rownames(Exprs_adipose)
+LogOvsT <- LogOvsT[order(LogOvsT, decreasing = F)]
+
+fgseaOvsT_GOBP <- fgsea(pathways = toGSEA_GOBP, 
+                       stats    = LogOvsT)
+
+fgseaOvsT_GOCC <- fgsea(pathways = toGSEA_GOCC, 
+                       stats    = LogOvsT)
+
+fgseaOvsT_GOMF <- fgsea(pathways = toGSEA_GOMF, 
+                       stats    = LogOvsT)
+
+fgseaOvsT_KEGG <- fgsea(pathways = toGSEA_KEGG, 
+                       stats    = LogOvsT)
