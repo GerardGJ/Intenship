@@ -34,6 +34,9 @@ library('tidygraph')
 library('eulerr')
 library('corrplot')
 library('dendextend')
+library(foreach)
+library(parallel)
+library(doParallel)
 setwd("/Users/Gerard/Desktop/")
 #### Functions ####
 
@@ -129,8 +132,8 @@ Correlation_TwoMethod <- function(input_clinical, input_expression,filter){
 enrichment_1D_with_pvals <- function(annotations, matrix_anots_pvals){
   sigWil <- data.frame()
   for(anot in annotations){
-    rows_anot <- matrix_anots_pvals[which(matrix_anots_pvals$Annotaion == anot),]
-    wilcox <- wilcox.test(rows_anot$pVal, matrix_anots_pvals$pVal)
+    index = which(matrix_anots_pvals[,2] == anot)
+    wilcox <- wilcox.test(matrix_anots_pvals[index,3], matrix_anots_pvals[-index,3])
     sigWil <- rbind(sigWil, c(anot, wilcox$p.value))
   }
   colnames(sigWil) <- c("Annotation", "pVal")
@@ -139,8 +142,7 @@ enrichment_1D_with_pvals <- function(annotations, matrix_anots_pvals){
   
   s <- c()
   for(anot in sigWil$Annotation){
-    rows_anot <- matrix_anots_pvals[which(matrix_anots_pvals$Annotaion == anot),]
-    s.calc <- 2*(mean(rank(rows_anot$pVal)) - mean(rank(matrix_anots_pvals$pVal)))/nrow(matrix_anots_pvals)
+    s.calc <- 2*(mean(rank(matrix_anots_pvals[which(matrix_anots_pvals[,2]  == anot),])) - mean(rank(matrix_anots_pvals[-which(matrix_anots_pvals[,2] == anot),])))/nrow(matrix_anots_pvals)
     s <- append(s,s.calc)
   }
   return(cbind(sigWil, s))
@@ -148,6 +150,34 @@ enrichment_1D_with_pvals <- function(annotations, matrix_anots_pvals){
 
 Xiao_correction <- function(matrix_limma){
   return(matrix_limma[,4] ** abs(matrix_limma[,1]))
+}
+
+enrichment_1D_parallel <- function(annotations,matrix_anots_pvals){
+  n.cores <- parallel::detectCores() - 1
+  my.cluster <- parallel::makeCluster(n.cores, type = "PSOCK")
+  print(my.cluster)
+  doParallel::registerDoParallel(cl = my.cluster)
+  foreach::getDoParRegistered()
+  foreach::getDoParWorkers()
+
+  sigWil <- foreach(anot = annotations) %dopar% {
+    index <- which(matrix_anots_pvals[,2] == anot)
+    wilcox <- wilcox.test(as.numeric(matrix_anots_pvals[index,3]), as.numeric(matrix_anots_pvals[-index,3]))
+    return(c(anot, wilcox$p.value))
+  }
+
+  sigWil <- as.data.frame(t(rbind.data.frame(sigWil)))
+  colnames(sigWil) <- c("Annotation", "pVal")
+  sigWil$p.adj <- p.adjust(sigWil$pVal, method = "BH")
+  sigWil <- sigWil[sigWil$p.adj <= 0.05,]
+
+  s <- c()
+  for(anot in sigWil[,1]){
+    index <- which(matrix_anots_pvals[,2] == anot)
+    s.calc <- 2*(mean(rank(matrix_anots_pvals[index,3])) - mean(rank(matrix_anots_pvals[-index,3])))/nrow(matrix_anots_pvals)
+  s <- append(s,s.calc)
+  }
+  return(cbind(sigWil, s))
 }
 
 #### Preprocessing ####
@@ -203,6 +233,7 @@ dim(Exprs_adipose)
 
 #Median normalise
 data_median <- apply(Exprs_adipose, 2, median, na.rm=TRUE)
+Exprs_adipose_notNotmalized <- Exprs_adipose
 Exprs_adipose_notImputed <- Exprs_adipose[] - data_median[col(Exprs_adipose)[]]
 Exprs_adipose_normalizaed <- Exprs_adipose_notImputed
 
@@ -452,12 +483,12 @@ for(clinical in c("GIR1","VO2max1", "BMI1", "HbA1c1", "FFM1", "FM1")){
       dataset_new$Clinical <- as.numeric(dataset_new$Clinical)
       dataset_new$Protein <- as.numeric(dataset_new$Protein)
       test <- rmcorr(participant = Subject, measure1 = Clinical, measure2 = Protein, dataset = dataset_new)
-      result <- rbind(result, c(clinical, prot, test$r, test$p))
+      result <- rbind(result, c(clinical, prot, test$r, test$p,test$CI[1],test$CI[2]))
     }
   }
 } 
 
-colnames(result) <- c("clinical", "Protein", "correlation", "pVal")
+colnames(result) <- c("clinical", "Protein", "correlation", "pVal", "CI Low", "CI high")
 result$correlation <- as.numeric(result$correlation)
 result$pVal <- as.numeric(result$pVal)
 result$correlation <- as.numeric(result$correlation)
@@ -489,6 +520,10 @@ prot_VO2max <- result_VO2max %>% filter(pVal < 0.05) %>% filter(abs(correlation)
 
 list_prot_sig <- rbind(prot_FFM, prot_BMI, prot_GIR, prot_FM, prot_HbA1c, prot_VO2max)
 
+list_prot_sig$sign <- paste(list_prot_sig$clinical,"-")
+list_prot_sig$sign[list_prot_sig$correlation > 0] <- paste(list_prot_sig[list_prot_sig$correlation > 0,1],"+")
+table(list_prot_sig$sign)
+
 list1 <- list()
 Pair_no_leaf <- c()
 for(i in 1:6){
@@ -507,8 +542,14 @@ for(i in 1:6){
   }
 }
 Pair_no_leaf <- unique(Pair_no_leaf)
+
+geneSymbols <- mapIds(org.Hs.eg.db, keys=rownames(Exprs_adipose), column="SYMBOL", keytype="ACCNUM", multiVals="first")
+geneSymbols[1575] <- "PALM2"#Q8IXS6
+geneSymbols[1966] <- "AKAP2"#Q9Y2D5 
 result_GIR$names <- NA
-result_GIR$names[result_GIR$p.adj < 0.05] <- result_GIR$Protein[result_GIR$p.adj < 0.05]
+result_GIR$names[result_GIR$p.adj < 0.05] <- geneSymbols[result_GIR$p.adj < 0.05]
+
+
 
 ggplot(result_GIR, aes(as.numeric(correlation), -log10(pVal), color = pVal <= 1e-04, label = names)) + 
   geom_point(aes(alpha = 0.4)) + 
@@ -528,17 +569,6 @@ sigprots <- resultall %>% filter(p.adj <= 0.05) %>% filter(Protein != "P02792") 
 Exprs_adipose_noBatch_notImp_ordered <- Exprs_adipose_noBatch_notImp[order(match(rownames(Exprs_adipose_noBatch_notImp),clinical_data_noNA$New_ID)),]
 
 Group = as.factor(clinical_data_noNA$Group)
-
-plot1 <- ggplot(mapping = aes(clinical_data_noNA$BMI1,Exprs_adipose_noBatch_notImp_ordered[,"O75521"])) +
-  geom_point(aes(color = Group, alpha = 0.9), size = 3) +  
-  theme_minimal() +
-  geom_smooth(method = "lm") +
-  annotate("text", label = paste("r = 0.661"), x = 35, y = 2.5) + 
-  annotate("text", label = paste("adj. pVal = 0.0067"), x = 35, y = 2) +   
-  labs(title = "BMI vs ECI2", x = "BMI", y = "ECI2") +
-  scale_color_manual("Groups" ,values = c("#73D055FF", "#FDE725FF", "#404788FF"), labels = c("Lean", "Obese", "T2D")) +
-  guides(alpha = "none") +
-  theme(plot.title = element_text(hjust = 0.5))
   
 plot2 <- ggplot(mapping = aes(clinical_data_noNA$GIR1,Exprs_adipose_noBatch_notImp_ordered[,"O95197"])) +
   geom_point(aes(color = Group, alpha = 0.9), size = 3) +  
@@ -574,7 +604,7 @@ plot4 <- ggplot(mapping = aes(clinical_data_noNA$GIR1,Exprs_adipose_noBatch_notI
   theme(plot.title = element_text(hjust = 0.5))
 
 plot5 <- ggplot(mapping = aes(clinical_data_noNA$GIR1,Exprs_adipose_noBatch_notImp_ordered[,"P11310"])) +
-  geom_point(aes(color = Group)) + 
+  geom_point(aes(color = Group,alpha = 0.9), size = 3) + 
   theme_minimal() +
   geom_smooth(method = "lm") +
   annotate("text", label = paste("r = -0.582"), x = 600, y = 1.5) + 
@@ -775,81 +805,77 @@ for(i in seq_along(community_list_pairwise)){
 }
 
 #### Plot ORA ####
-delta_df_plot <- data.frame()
-for(i in seq_along(enrichment_result_delta)){
-  clinical <- names(enrichment_result_delta)[i]
-  delta_df_plot <- rbind(delta_df_plot, merge(enrichment_result_delta[[i]][1:5,], clinical))
-}
-
-delta_df_plot <- delta_df_plot %>% filter(GeneRatio != "1/2") %>% filter(GeneRatio != "1/4")
-
-ggplot(delta_df_plot, aes(y, Description)) + 
-  geom_point(aes(color = pvalue, size = Count)) + 
-  scale_color_viridis_c() + 
-  facet_wrap(~y, scales = "free_x") +
-  theme(axis.ticks.x = element_blank(), axis.text.x = element_blank()) + 
-  labs(y = "Pathways", x = "Clinical Values") 
-
 pair_df_plot <- data.frame()
 for(i in seq_along(enrichment_result_pairwise)){
   clinical <- names(enrichment_result_pairwise)[i]
-  pair_df_plot <- rbind(pair_df_plot, merge(enrichment_result_pairwise[[i]][1:5,], clinical))
+  pair_df_plot <- rbind(pair_df_plot, merge(enrichment_result_pairwise[[i]], clinical))
 }
 
-pair_df_plot <- pair_df_plot %>% filter(GeneRatio != "1/10") %>% filter(GeneRatio != "1/12")
+pair_df_plot <- pair_df_plot %>% filter(p.adjust <= 0.1)
+pair_df_plot$Description = factor(pair_df_plot$Description, levels=pair_df_plot[order(pair_df_plot$p.adjust), "Description"])
+
 
 ggplot(pair_df_plot, aes(y, Description)) + 
-  geom_point(aes(color = pvalue, size = Count)) + 
+  geom_point(aes(color = p.adjust, size = Count)) + 
   scale_color_viridis_c() + 
-  facet_wrap(~y, scales = "free_x") +
+  facet_grid(~y, scales = "free_x", space = "free") +
   theme(axis.ticks.x = element_blank(), axis.text.x = element_blank()) + 
-  labs(y = "Pathways", x = "Clinical Values") 
+  labs(y = "Pathways", x = "Clinical Values", title = "ORA pathway") 
 
 #GOMF
 pair_df_plot_GOMF <- data.frame()
 for(i in seq_along(enrichment_result_pairwise_GOMF)){
   clinical <- names(enrichment_result_pairwise_GOMF)[i]
-  pair_df_plot_GOMF <- rbind(pair_df_plot_GOMF, merge(enrichment_result_pairwise_GOMF[[i]][1:5,], clinical))
+  pair_df_plot_GOMF <- rbind(pair_df_plot_GOMF, merge(enrichment_result_pairwise_GOMF[[i]], clinical))
 }
 
-pair_df_plot_GOMF <- pair_df_plot_GOMF %>% filter(GeneRatio != "1/16")
+pair_df_plot_GOMF <- pair_df_plot_GOMF %>% filter(p.adjust <= 0.1)
+
+pair_df_plot_GOMF$Description = factor(pair_df_plot_GOMF$Description, levels=pair_df_plot_GOMF[order(pair_df_plot_GOMF$p.adjust), "Description"])
+
 
 ggplot(pair_df_plot_GOMF, aes(y, Description)) + 
-  geom_point(aes(color = pvalue, size = Count)) + 
+  geom_point(aes(color = p.adjust, size = Count)) + 
   scale_color_viridis_c() + 
-  facet_wrap(~y, scales = "free_x") +
+  facet_grid(~y, scales = "free_x") +
   theme(axis.ticks.x = element_blank(), axis.text.x = element_blank()) + 
-  labs(y = "Pathways", x = "Clinical Values")
+  labs(y = "Pathways", x = "Clinical Values", title = "ORA GOMF")
 
 #GOBP
 pair_df_plot_GOBP <- data.frame()
 for(i in seq_along(enrichment_result_pairwise_GOBP)){
   clinical <- names(enrichment_result_pairwise_GOBP)[i]
-  pair_df_plot_GOBP <- rbind(pair_df_plot_GOBP, merge(enrichment_result_pairwise_GOBP[[i]][1:5,], clinical))
+  pair_df_plot_GOBP <- rbind(pair_df_plot_GOBP, merge(enrichment_result_pairwise_GOBP[[i]], clinical))
 }
 
+pair_df_plot_GOBP <- pair_df_plot_GOBP %>% filter(p.adjust <= 0.1)
+
+pair_df_plot_GOBP$Description = factor(pair_df_plot_GOBP$Description, levels=pair_df_plot_GOBP[order(pair_df_plot_GOBP$p.adjust), "Description"])
+
 ggplot(pair_df_plot_GOBP, aes(y, Description)) + 
-  geom_point(aes(color = pvalue, size = Count)) + 
+  geom_point(aes(color = p.adjust, size = Count)) + 
   scale_color_viridis_c() + 
-  facet_wrap(~y, scales = "free_x") +
+  facet_grid(~y, scales = "free_x") +
   theme(axis.ticks.x = element_blank(), axis.text.x = element_blank()) + 
-  labs(y = "Pathways", x = "Clinical Values")
+  labs(y = "Pathways", x = "Clinical Values", title = "ORA GOBP")
 
 #GOCC
 pair_df_plot_GOCC <- data.frame()
 for(i in seq_along(enrichment_result_pairwise_GOCC)){
   clinical <- names(enrichment_result_pairwise_GOCC)[i]
-  pair_df_plot_GOCC <- rbind(pair_df_plot_GOCC, merge(enrichment_result_pairwise_GOCC[[i]][1:5,], clinical))
+  pair_df_plot_GOCC <- rbind(pair_df_plot_GOCC, merge(enrichment_result_pairwise_GOCC[[i]], clinical))
 }
 
-pair_df_plot_GOCC <- pair_df_plot_GOCC %>% filter(GeneRatio != "1/13")
+pair_df_plot_GOCC <- pair_df_plot_GOCC %>% filter(p.adjust <= 0.1) %>% arrange(p.adjust) 
 
-ggplot(pair_df_plot_GOCC, aes(y, Description)) + 
-  geom_point(aes(color = pvalue, size = Count)) + 
+pair_df_plot_GOCC$Description = factor(pair_df_plot_GOCC$Description, levels=pair_df_plot_GOCC[order(pair_df_plot_GOCC$p.adjust), "Description"])
+  
+ggplot(pair_df_plot_GOCC, aes(y, as.factor(Description))) + 
+  geom_point(aes(color = p.adjust, size = Count)) + 
   scale_color_viridis_c() + 
-  facet_wrap(~y, scales = "free_x") +
+  facet_grid(~y, scales = "free_x") +
   theme(axis.ticks.x = element_blank(), axis.text.x = element_blank()) + 
-  labs(y = "Pathways", x = "Clinical Values")
+  labs(y = "Pathways", x = "Clinical Values", title = "ORA GOCC")
 
 
 #### Annotation ####
@@ -885,28 +911,28 @@ for(Protein.IDs in rownames(Exprs_adipose)){
   }
 }
 
-matrix_annotations_GOBP <- aggregate(matrix_annotations_GOBP$y, list(matrix_annotations_GOBP$x), paste ,collapse=" ")
+matrix_annotations_GOBP_aggregate <- aggregate(matrix_annotations_GOBP$y, list(matrix_annotations_GOBP$x), paste ,collapse=" ")
 toGSEA_GOBP <- list()
-for(i in seq_along(rownames(matrix_annotations_GOBP))){
-  toGSEA_GOBP[[matrix_annotations_GOBP[i,1]]] <- unlist(strsplit(x = matrix_annotations_GOBP$x[[i]], split = " "))
+for(i in seq_along(rownames(matrix_annotations_GOBP_aggregate))){
+  toGSEA_GOBP[[matrix_annotations_GOBP_aggregate[i,1]]] <- unlist(strsplit(x = matrix_annotations_GOBP_aggregate$x[[i]], split = " "))
 }
 
-matrix_annotations_GOMF <- aggregate(matrix_annotations_GOMF$y, list(matrix_annotations_GOMF$x), paste ,collapse=" ")
+matrix_annotations_GOMF_aggregate <- aggregate(matrix_annotations_GOMF$y, list(matrix_annotations_GOMF$x), paste ,collapse=" ")
 toGSEA_GOMF <- list()
-for(i in seq_along(rownames(matrix_annotations_GOMF))){
-  toGSEA_GOMF[[matrix_annotations_GOMF[i,1]]] <- unlist(strsplit(x = matrix_annotations_GOMF$x[[i]], split = " "))
+for(i in seq_along(rownames(matrix_annotations_GOMF_aggregate))){
+  toGSEA_GOMF[[matrix_annotations_GOMF_aggregate[i,1]]] <- unlist(strsplit(x = matrix_annotations_GOMF_aggregate$x[[i]], split = " "))
 }
 
-matrix_annotations_GOCC <- aggregate(matrix_annotations_GOCC$y, list(matrix_annotations_GOCC$x), paste ,collapse=" ")
+matrix_annotations_GOCC_aggregate <- aggregate(matrix_annotations_GOCC$y, list(matrix_annotations_GOCC$x), paste ,collapse=" ")
 toGSEA_GOCC <- list()
-for(i in seq_along(rownames(matrix_annotations_GOCC))){
-  toGSEA_GOCC[[matrix_annotations_GOCC[i,1]]] <- unlist(strsplit(x = matrix_annotations_GOCC$x[[i]], split = " "))
+for(i in seq_along(rownames(matrix_annotations_GOCC_aggregate))){
+  toGSEA_GOCC[[matrix_annotations_GOCC_aggregate[i,1]]] <- unlist(strsplit(x = matrix_annotations_GOCC_aggregate$x[[i]], split = " "))
 }
 
-matrix_annotations_KEGG <- aggregate(matrix_annotations_KEGG$y, list(matrix_annotations_KEGG$x), paste ,collapse=" ")
+matrix_annotations_KEGG_aggregate <- aggregate(matrix_annotations_KEGG$y, list(matrix_annotations_KEGG$x), paste ,collapse=" ")
 toGSEA_KEGG <- list()
-for(i in seq_along(rownames(matrix_annotations_KEGG))){
-  toGSEA_KEGG[[matrix_annotations_KEGG[i,1]]] <- unlist(strsplit(x = matrix_annotations_KEGG$x[[i]], split = " "))
+for(i in seq_along(rownames(matrix_annotations_KEGG_aggregate))){
+  toGSEA_KEGG[[matrix_annotations_KEGG_aggregate[i,1]]] <- unlist(strsplit(x = matrix_annotations_KEGG_aggregate$x[[i]], split = " "))
 }
 
 #### Enrichment analysis on correlation Pairwise ####
@@ -1466,3 +1492,164 @@ fgseaOvsT_GOMF <- fgsea(pathways = toGSEA_GOMF,
 
 fgseaOvsT_KEGG <- fgsea(pathways = toGSEA_KEGG, 
                        stats    = LogOvsT)
+#### Finding stable protein across all samples ####
+
+#Lowest CV across all samples
+Exprs_adipose_medianscaled <- medianScaling(Exprs_adipose_notNotmalized)
+Exprs_adipose_noBatch_medianScaled <- removeBatchEffect(Exprs_adipose_medianscaled, batch = cluster, design = design)
+proteins_Top100 <- rownames(Exprs_adipose_medianscaled)[order(apply(Exprs_adipose_medianscaled, 1, median, na.rm=TRUE), decreasing = T)][1:100]
+
+Exprs_Top100 <- as.data.frame(cbind(Exprs_adipose_noBatch_medianScaled[proteins_Top100,], mainEffect_GROUP[proteins_Top100,]$P.Value, Effecttrain_main[proteins_Top100,]$P.Value))
+Exprs_Top100_filter <- Exprs_Top100 %>% filter(V92 > 0.4) %>% filter(V93 > 0.4)
+
+Exprs_adipose_noLog <- 2**Exprs_Top100_filter[,-c(92,93)]
+CV <- apply(Exprs_adipose_noLog,1,FUN = function(x) (sd(x)/mean(x))*100)
+CV <- CV[order(CV, decreasing = F)]
+head(CV)
+
+#### 1D enrichment ####
+#Pval correlation
+colnames(matrix_annotations_GOBP) <- c("Annotation", "Protein")
+matrix_to_1D_GOBP_pval <- merge(matrix_annotations_GOBP,result_GIR[,c(2,4)], by = "Protein")
+colnames(matrix_annotations_GOCC) <- c("Annotation", "Protein")
+matrix_to_1D_GOCC_pval <- merge(matrix_annotations_GOCC,result_GIR[,c(2,4)], by = "Protein")
+colnames(matrix_annotations_GOMF) <- c("Annotation", "Protein")
+matrix_to_1D_GOMF_pval <- merge(matrix_annotations_GOMF,result_GIR[,c(2,4)], by = "Protein")
+colnames(matrix_annotations_KEGG) <- c("Annotation", "Protein")
+matrix_to_1D_KEGG_pval <- merge(matrix_annotations_KEGG,result_GIR[,c(2,4)], by = "Protein")
+
+
+OneD_Enrichment_GIR <- enrichment_1D_with_pvals(unique(matrix_annotations_GOBP$Annotation),matrix_to_1D)
+OneD_Enrichment_GIR_GOBP_p <- enrichment_1D_parallel(unique(matrix_annotations_GOBP$Annotation),matrix_to_1D_GOBP_pval)
+rownames(OneD_Enrichment_GIR_GOBP_p) <- 1:nrow(OneD_Enrichment_GIR_GOBP_p)
+OneD_Enrichment_GIR_GOCC_p <- enrichment_1D_parallel(unique(matrix_annotations_GOCC$Annotation),matrix_to_1D_GOCC_pval)
+rownames(OneD_Enrichment_GIR_GOCC_p) <- 1:nrow(OneD_Enrichment_GIR_GOCC_p)
+OneD_Enrichment_GIR_GOMF_p <- enrichment_1D_parallel(unique(matrix_annotations_GOMF$Annotation),matrix_to_1D_GOMF_pval)
+rownames(OneD_Enrichment_GIR_GOMF_p) <- 1:nrow(OneD_Enrichment_GIR_GOMF_p)
+OneD_Enrichment_GIR_KEGG_p <- enrichment_1D_parallel(unique(matrix_annotations_KEGG$Annotation),matrix_to_1D_KEGG_pval)
+rownames(OneD_Enrichment_GIR_KEGG_p) <- 1:nrow(OneD_Enrichment_GIR_KEGG_p)
+
+#LogFC Lean
+LogLean <- cbind(rownames(Effecttrain_Lean), Effecttrain_Lean$logFC)
+colnames(LogLean) <- c("Protein", "LogFC")
+matrix_to_1d_GOBP_LogLean <- merge(matrix_annotations_GOBP, LogLean, by = "Protein")
+matrix_to_1d_GOMF_LogLean <- merge(matrix_annotations_GOMF, LogLean, by = "Protein")
+matrix_to_1d_GOCC_LogLean <- merge(matrix_annotations_GOCC, LogLean, by = "Protein")
+matrix_to_1d_KEGG_LogLean <- merge(matrix_annotations_KEGG, LogLean, by = "Protein")
+
+OneD_Enrichment_GIR_GOBP_LogL <- enrichment_1D_parallel(unique(matrix_annotations_GOBP$Annotation),matrix_to_1d_GOBP_LogLean)
+rownames(OneD_Enrichment_GIR_GOBP_LogL) <- 1:nrow(OneD_Enrichment_GIR_GOBP_LogL)
+OneD_Enrichment_GIR_GOCC_LogL <- enrichment_1D_parallel(unique(matrix_annotations_GOCC$Annotation),matrix_to_1d_GOCC_LogLean)
+rownames(OneD_Enrichment_GIR_GOCC_LogL) <- 1:nrow(OneD_Enrichment_GIR_GOCC_LogL)
+OneD_Enrichment_GIR_GOMF_LogL <- enrichment_1D_parallel(unique(matrix_annotations_GOMF$Annotation),matrix_to_1d_GOMF_LogLean)
+rownames(OneD_Enrichment_GIR_GOMF_LogL) <- 1:nrow(OneD_Enrichment_GIR_GOMF_LogL)
+OneD_Enrichment_GIR_KEGG_LogL <- enrichment_1D_parallel(unique(matrix_annotations_KEGG$Annotation),matrix_to_1d_KEGG_LogLean)
+rownames(OneD_Enrichment_GIR_KEGG_LogL) <- 1:nrow(OneD_Enrichment_GIR_KEGG_LogL)
+
+#LogFC Obese
+LogObese <- cbind(rownames(Effecttrain_Obese), Effecttrain_Obese$logFC)
+colnames(LogObese) <- c("Protein", "LogFC")
+matrix_to_1d_GOBP_LogObese <- merge(matrix_annotations_GOBP, LogObese, by = "Protein")
+matrix_to_1d_GOMF_LogObese <- merge(matrix_annotations_GOMF, LogObese, by = "Protein")
+matrix_to_1d_GOCC_LogObese <- merge(matrix_annotations_GOCC, LogObese, by = "Protein")
+matrix_to_1d_KEGG_LogObese <- merge(matrix_annotations_KEGG, LogObese, by = "Protein")
+
+OneD_Enrichment_GIR_GOBP_LogO <- enrichment_1D_parallel(unique(matrix_annotations_GOBP$Annotation),matrix_to_1d_GOBP_LogObese)
+rownames(OneD_Enrichment_GIR_GOBP_LogO) <- 1:nrow(OneD_Enrichment_GIR_GOBP_LogO)
+OneD_Enrichment_GIR_GOCC_LogO <- enrichment_1D_parallel(unique(matrix_annotations_GOCC$Annotation),matrix_to_1d_GOCC_LogObese)
+rownames(OneD_Enrichment_GIR_GOCC_LogO) <- 1:nrow(OneD_Enrichment_GIR_GOCC_LogO)
+OneD_Enrichment_GIR_GOMF_LogO <- enrichment_1D_parallel(unique(matrix_annotations_GOMF$Annotation),matrix_to_1d_GOMF_LogObese)
+rownames(OneD_Enrichment_GIR_GOMF_LogO) <- 1:nrow(OneD_Enrichment_GIR_GOMF_LogO)
+OneD_Enrichment_GIR_KEGG_LogO <- enrichment_1D_parallel(unique(matrix_annotations_KEGG$Annotation),matrix_to_1d_KEGG_LogObese)
+rownames(OneD_Enrichment_GIR_KEGG_LogO) <- 1:nrow(OneD_Enrichment_GIR_KEGG_LogO)
+
+
+#LogFC T2D
+LogT2D <- cbind(rownames(Effecttrain_T2D), Effecttrain_T2D$logFC)
+colnames(LogT2D) <- c("Protein", "LogFC")
+matrix_to_1d_GOBP_LogT2D <- merge(matrix_annotations_GOBP, LogT2D, by = "Protein")
+matrix_to_1d_GOMF_LogT2D <- merge(matrix_annotations_GOMF, LogT2D, by = "Protein")
+matrix_to_1d_GOCC_LogT2D <- merge(matrix_annotations_GOCC, LogT2D, by = "Protein")
+matrix_to_1d_KEGG_LogT2D <- merge(matrix_annotations_KEGG, LogT2D, by = "Protein")
+
+OneD_Enrichment_GIR_GOBP_LogT <- enrichment_1D_parallel(unique(matrix_annotations_GOBP$Annotation),matrix_to_1d_GOBP_LogT2D)
+rownames(OneD_Enrichment_GIR_GOBP_LogT) <- 1:nrow(OneD_Enrichment_GIR_GOBP_LogT)
+OneD_Enrichment_GIR_GOCC_LogT <- enrichment_1D_parallel(unique(matrix_annotations_GOCC$Annotation),matrix_to_1d_GOCC_LogT2D)
+rownames(OneD_Enrichment_GIR_GOCC_LogT) <- 1:nrow(OneD_Enrichment_GIR_GOCC_LogT)
+OneD_Enrichment_GIR_GOMF_LogT <- enrichment_1D_parallel(unique(matrix_annotations_GOMF$Annotation),matrix_to_1d_GOMF_LogT2D)
+rownames(OneD_Enrichment_GIR_GOMF_LogT) <- 1:nrow(OneD_Enrichment_GIR_GOMF_LogT)
+OneD_Enrichment_GIR_KEGG_LogT <- enrichment_1D_parallel(unique(matrix_annotations_KEGG$Annotation),matrix_to_1d_KEGG_LogT2D)
+rownames(OneD_Enrichment_GIR_KEGG_LogT) <- 1:nrow(OneD_Enrichment_GIR_KEGG_LogT)
+
+
+#### 2D enrichment ####
+# annotations = Vector with all the annotations (Not repeated)
+# matrix1 and matrix2 = matrix with the following columns 1st the Protein name, 2nd the annotaion, 3rd LogFC 
+#                                                         (protein has to be repeated as many times as annotations it has)
+# matrix1 and matrix2 have the proteins in the same order
+Enrichment_2D_parallel <- function(annotations, matrix1, matrix2,Log_vec_1,Log_vec_2){
+  num.prots <- length(unique(matrix1[,1]))
+  
+  n.cores <- parallel::detectCores() - 1
+  my.cluster <- parallel::makeCluster(n.cores, type = "PSOCK")
+  print(my.cluster)
+  doParallel::registerDoParallel(cl = my.cluster)
+  foreach::getDoParRegistered()
+  foreach::getDoParWorkers()
+  
+  sigManova <- foreach(anot = annotations) %dopar% {
+    make_groups <- matrix1[matrix1[,2] == anot,1]
+    Group_p <- numeric(nrow(Log_vec_1))
+    Group_p[which(Log_vec_1[,1] %in% make_groups)] <- 1
+    Group_p <- as.factor(Group_p)
+    Data <- cbind(rank(as.numeric(Log_vec_1[,2])),rank(as.numeric(Log_vec_2[,2])),Group_p)
+    res.manova <- manova(cbind(V1,V2) ~ Group_p, as.data.frame(Data))
+    summary.man <- summary.aov(res.manova)
+    c(anot, summary.man$` Response V1`$`Pr(>F)`[1], summary.man$` Response V2`$`Pr(>F)`[1])
+  }
+  sigManova <- as.data.frame(t(rbind.data.frame(sigManova)))
+  colnames(sigManova) <- c("Annotation", "pVal_1", "pVal_2")  
+  sigManova$p.adj_1 <- p.adjust(as.numeric(sigManova$pVal_1), method = "BH")
+  sigManova$p.adj_2 <- p.adjust(as.numeric(sigManova$pVal_2), method = "BH")
+  sigManova_short <- sigManova[as.numeric(sigManova$p.adj_1) <= 0.15 || as.numeric(sigManova$p.adj_2) <= 0.15,]
+  sigManova_short <- sigManova %>% filter(p.adj_1 <= 0.15 | p.adj_2 <= 0.15)
+
+  sx <- c()
+  sy <- c()
+  for(anot in sigManova_short[,1]){
+    make_groups <- matrix1[matrix1[,2] == anot,1]
+    index = which(Log_vec_1[,1] %in% make_groups)
+    ranked_data <- cbind(rank(Log_vec_1[,2]), rank(Log_vec_2[,2]))
+    s.calc <- 2*(mean(as.numeric(ranked_data[index,1])) - mean(as.numeric(ranked_data[-index,1])))/nrow(Log_vec_1)
+    sx <- append(sx,s.calc)
+    s.calc <- 2*(mean(as.numeric(ranked_data[index,2])) - mean(as.numeric(ranked_data[-index,2])))/nrow(Log_vec_2)
+    sy <- append(sy,s.calc)
+  }
+  Out_matrix <- as.data.frame(cbind(x = as.numeric(sx), y = as.numeric(sy), annotation = sigManova_short[,1]))
+  Out_matrix$x <- as.numeric(Out_matrix$x)
+  Out_matrix$y <- as.numeric(Out_matrix$y)
+  return(Out_matrix)
+}
+
+Entrichment_2D_LeanvsT2D_GOCC <- Enrichment_2D_parallel(unique(matrix_annotations_GOCC$Annotation),matrix_to_1d_GOCC_LogLean, matrix_to_1d_GOCC_LogT2D, LogLean, LogT2D)
+Entrichment_2D_LeanvsT2D_GOBP <- Enrichment_2D_parallel(unique(matrix_annotations_GOBP$Annotation),matrix_to_1d_GOBP_LogLean, matrix_to_1d_GOBP_LogT2D, LogLean, LogT2D)
+Entrichment_2D_LeanvsT2D_GOMF <- Enrichment_2D_parallel(unique(matrix_annotations_GOMF$Annotation),matrix_to_1d_GOMF_LogLean, matrix_to_1d_GOMF_LogT2D, LogLean, LogT2D)
+
+Enrichment_2d_LeanvsT2D <- rbind(Entrichment_2D_LeanvsT2D_GOCC,Entrichment_2D_LeanvsT2D_GOBP,Entrichment_2D_LeanvsT2D_GOMF)
+ggplot(Enrichment_2d_LeanvsT2D, aes(x,y)) + geom_point()
+
+
+Entrichment_2D_LeanvsObese_GOCC <- Enrichment_2D_parallel(unique(matrix_annotations_GOCC$Annotation),matrix_to_1d_GOCC_LogLean, matrix_to_1d_GOCC_LogObese, LogLean, LogObese)
+Entrichment_2D_LeanvsObese_GOBP <- Enrichment_2D_parallel(unique(matrix_annotations_GOBP$Annotation),matrix_to_1d_GOBP_LogLean, matrix_to_1d_GOBP_LogObese, LogLean, LogObese)
+Entrichment_2D_LeanvsObese_GOMF <- Enrichment_2D_parallel(unique(matrix_annotations_GOMF$Annotation),matrix_to_1d_GOMF_LogLean, matrix_to_1d_GOMF_LogObese, LogLean, LogObese)
+
+Enrichment_2d_LeanvsObese <- rbind(Entrichment_2D_LeanvsObese_GOCC,Entrichment_2D_LeanvsObese_GOBP,Entrichment_2D_LeanvsObese_GOMF)
+ggplot(Enrichment_2d_LeanvsObese, aes(x,y)) + geom_point()
+
+
+Entrichment_2D_T2DvsObese_GOCC <- Enrichment_2D_parallel(unique(matrix_annotations_GOCC$Annotation),matrix_to_1d_GOCC_LogT2D, matrix_to_1d_GOCC_LogObese, LogT2D, LogObese)
+Entrichment_2D_T2DvsObese_GOBP <- Enrichment_2D_parallel(unique(matrix_annotations_GOBP$Annotation),matrix_to_1d_GOBP_LogT2D, matrix_to_1d_GOBP_LogObese, LogT2D, LogObese)
+Entrichment_2D_T2DvsObese_GOMF <- Enrichment_2D_parallel(unique(matrix_annotations_GOMF$Annotation),matrix_to_1d_GOMF_LogT2D, matrix_to_1d_GOMF_LogObese, LogT2D, LogObese)
+
+Enrichment_2d_T2DvsObese <- rbind(Entrichment_2D_T2DvsObese_GOCC,Entrichment_2D_T2DvsObese_GOBP,Entrichment_2D_T2DvsObese_GOMF)
+ggplot(Enrichment_2d_T2DvsObese, aes(x,y)) + geom_point()
