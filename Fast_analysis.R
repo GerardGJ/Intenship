@@ -129,25 +129,6 @@ Correlation_TwoMethod <- function(input_clinical, input_expression,filter){
   
 }
 
-enrichment_1D_with_pvals <- function(annotations, matrix_anots_pvals){
-  sigWil <- data.frame()
-  for(anot in annotations){
-    index = which(matrix_anots_pvals[,2] == anot)
-    wilcox <- wilcox.test(matrix_anots_pvals[index,3], matrix_anots_pvals[-index,3])
-    sigWil <- rbind(sigWil, c(anot, wilcox$p.value))
-  }
-  colnames(sigWil) <- c("Annotation", "pVal")
-  sigWil$p.adj <- p.adjust(sigWil$pVal, method = "BH")
-  sigWil <- sigWil[sigWil$p.adj <= 0.05,]
-  
-  s <- c()
-  for(anot in sigWil$Annotation){
-    s.calc <- 2*(mean(rank(matrix_anots_pvals[which(matrix_anots_pvals[,2]  == anot),])) - mean(rank(matrix_anots_pvals[-which(matrix_anots_pvals[,2] == anot),])))/nrow(matrix_anots_pvals)
-    s <- append(s,s.calc)
-  }
-  return(cbind(sigWil, s))
-}
-
 Xiao_correction <- function(matrix_limma){
   return(matrix_limma[,4] ** abs(matrix_limma[,1]))
 }
@@ -180,6 +161,54 @@ enrichment_1D_parallel <- function(annotations,matrix_anots_pvals){
   return(cbind(sigWil, s))
 }
 
+# 2D enrichment analysis 
+# annotations = Vector with all the annotations (Not repeated)
+# matrix1 = matrix with the following columns 1st Annotation, 2nd Protein Name 
+#                                                         (protein has to be repeated as many times as annotations it has)
+# matrix1 have the proteins in the same order
+# Log_vec_1 and Log_vec_2 contein the logFC of each protein
+Enrichment_2D_parallel <- function(matrix1,Log_vec_1,Log_vec_2,pval_cutoff){
+  annotations <- unique(matrix1[,1])
+  
+  n.cores <- parallel::detectCores() - 1
+  my.cluster <- parallel::makeCluster(n.cores, type = "PSOCK")
+  print(my.cluster)
+  doParallel::registerDoParallel(cl = my.cluster)
+  foreach::getDoParRegistered()
+  foreach::getDoParWorkers()
+  
+  sigManova <- foreach(anot = annotations) %dopar% {
+    make_groups <- matrix1[matrix1[,1] == anot,2]
+    Group_p <- numeric(nrow(Log_vec_1))
+    Group_p[which(Log_vec_1[,1] %in% make_groups)] <- 1
+    Group_p <- as.factor(Group_p)
+    Data <- cbind(rank(as.numeric(Log_vec_1[,2])),rank(as.numeric(Log_vec_2[,2])),Group_p)
+    res.manova <- manova(cbind(V1,V2) ~ Group_p, as.data.frame(Data))
+    summary.man <- summary.aov(res.manova)
+    c(anot, summary.man[[1]][1,5], summary.man[[2]][1,5])
+  }
+  sigManova <- as.data.frame(t(rbind.data.frame(sigManova)))
+  colnames(sigManova) <- c("Annotation", "pVal_1", "pVal_2")
+  sigManova$p.adj_1 <- p.adjust(as.numeric(sigManova$pVal_1), method = "BH")
+  sigManova$p.adj_2 <- p.adjust(as.numeric(sigManova$pVal_2), method = "BH")
+  sigManova_short <- sigManova %>% filter(p.adj_1 <= pval_cutoff | p.adj_2 <= pval_cutoff)
+  
+  sx <- c()
+  sy <- c()
+  for(anot in sigManova_short[,1]){
+    make_groups <- matrix1[matrix1[,1] == anot,2]
+    index = which(Log_vec_1[,1] %in% make_groups)
+    ranked_data <- cbind(rank(as.numeric(Log_vec_1[,2])), rank(as.numeric(Log_vec_2[,2])))
+    s.calc <- 2*(mean(as.numeric(ranked_data[index,1])) - mean(as.numeric(ranked_data[-index,1])))/nrow(Log_vec_1)
+    sx <- append(sx,s.calc)
+    s.calc <- 2*(mean(as.numeric(ranked_data[index,2])) - mean(as.numeric(ranked_data[-index,2])))/nrow(Log_vec_2)
+    sy <- append(sy,s.calc)
+  }
+  Out_matrix <- as.data.frame(cbind(x = as.numeric(sx), y = as.numeric(sy), annotation = sigManova_short[,1]))
+  Out_matrix$x <- as.numeric(Out_matrix$x)
+  Out_matrix$y <- as.numeric(Out_matrix$y)
+  return(Out_matrix)
+}
 #### Preprocessing ####
 ### Importing data
 
@@ -1530,7 +1559,7 @@ OneD_Enrichment_GIR_KEGG_p <- enrichment_1D_parallel(unique(matrix_annotations_K
 rownames(OneD_Enrichment_GIR_KEGG_p) <- 1:nrow(OneD_Enrichment_GIR_KEGG_p)
 
 #LogFC Lean
-LogLean <- cbind(rownames(Effecttrain_Lean), Effecttrain_Lean$logFC)
+LogLean <- cbind(rownames(Effecttrain_Lean), as.numeric(Effecttrain_Lean$logFC))
 colnames(LogLean) <- c("Protein", "LogFC")
 matrix_to_1d_GOBP_LogLean <- merge(matrix_annotations_GOBP, LogLean, by = "Protein")
 matrix_to_1d_GOMF_LogLean <- merge(matrix_annotations_GOMF, LogLean, by = "Protein")
@@ -1547,7 +1576,7 @@ OneD_Enrichment_GIR_KEGG_LogL <- enrichment_1D_parallel(unique(matrix_annotation
 rownames(OneD_Enrichment_GIR_KEGG_LogL) <- 1:nrow(OneD_Enrichment_GIR_KEGG_LogL)
 
 #LogFC Obese
-LogObese <- cbind(rownames(Effecttrain_Obese), Effecttrain_Obese$logFC)
+LogObese <- cbind(rownames(Effecttrain_Obese), as.numeric(Effecttrain_Obese$logFC))
 colnames(LogObese) <- c("Protein", "LogFC")
 matrix_to_1d_GOBP_LogObese <- merge(matrix_annotations_GOBP, LogObese, by = "Protein")
 matrix_to_1d_GOMF_LogObese <- merge(matrix_annotations_GOMF, LogObese, by = "Protein")
@@ -1565,7 +1594,7 @@ rownames(OneD_Enrichment_GIR_KEGG_LogO) <- 1:nrow(OneD_Enrichment_GIR_KEGG_LogO)
 
 
 #LogFC T2D
-LogT2D <- cbind(rownames(Effecttrain_T2D), Effecttrain_T2D$logFC)
+LogT2D <- cbind(rownames(Effecttrain_T2D), as.numeric(Effecttrain_T2D$logFC))
 colnames(LogT2D) <- c("Protein", "LogFC")
 matrix_to_1d_GOBP_LogT2D <- merge(matrix_annotations_GOBP, LogT2D, by = "Protein")
 matrix_to_1d_GOMF_LogT2D <- merge(matrix_annotations_GOMF, LogT2D, by = "Protein")
@@ -1583,73 +1612,49 @@ rownames(OneD_Enrichment_GIR_KEGG_LogT) <- 1:nrow(OneD_Enrichment_GIR_KEGG_LogT)
 
 
 #### 2D enrichment ####
-# annotations = Vector with all the annotations (Not repeated)
-# matrix1 and matrix2 = matrix with the following columns 1st the Protein name, 2nd the annotaion, 3rd LogFC 
-#                                                         (protein has to be repeated as many times as annotations it has)
-# matrix1 and matrix2 have the proteins in the same order
-Enrichment_2D_parallel <- function(annotations, matrix1, matrix2,Log_vec_1,Log_vec_2){
-  num.prots <- length(unique(matrix1[,1]))
-  
-  n.cores <- parallel::detectCores() - 1
-  my.cluster <- parallel::makeCluster(n.cores, type = "PSOCK")
-  print(my.cluster)
-  doParallel::registerDoParallel(cl = my.cluster)
-  foreach::getDoParRegistered()
-  foreach::getDoParWorkers()
-  
-  sigManova <- foreach(anot = annotations) %dopar% {
-    make_groups <- matrix1[matrix1[,2] == anot,1]
-    Group_p <- numeric(nrow(Log_vec_1))
-    Group_p[which(Log_vec_1[,1] %in% make_groups)] <- 1
-    Group_p <- as.factor(Group_p)
-    Data <- cbind(rank(as.numeric(Log_vec_1[,2])),rank(as.numeric(Log_vec_2[,2])),Group_p)
-    res.manova <- manova(cbind(V1,V2) ~ Group_p, as.data.frame(Data))
-    summary.man <- summary.aov(res.manova)
-    c(anot, summary.man$` Response V1`$`Pr(>F)`[1], summary.man$` Response V2`$`Pr(>F)`[1])
-  }
-  sigManova <- as.data.frame(t(rbind.data.frame(sigManova)))
-  colnames(sigManova) <- c("Annotation", "pVal_1", "pVal_2")  
-  sigManova$p.adj_1 <- p.adjust(as.numeric(sigManova$pVal_1), method = "BH")
-  sigManova$p.adj_2 <- p.adjust(as.numeric(sigManova$pVal_2), method = "BH")
-  sigManova_short <- sigManova[as.numeric(sigManova$p.adj_1) <= 0.15 || as.numeric(sigManova$p.adj_2) <= 0.15,]
-  sigManova_short <- sigManova %>% filter(p.adj_1 <= 0.15 | p.adj_2 <= 0.15)
 
-  sx <- c()
-  sy <- c()
-  for(anot in sigManova_short[,1]){
-    make_groups <- matrix1[matrix1[,2] == anot,1]
-    index = which(Log_vec_1[,1] %in% make_groups)
-    ranked_data <- cbind(rank(Log_vec_1[,2]), rank(Log_vec_2[,2]))
-    s.calc <- 2*(mean(as.numeric(ranked_data[index,1])) - mean(as.numeric(ranked_data[-index,1])))/nrow(Log_vec_1)
-    sx <- append(sx,s.calc)
-    s.calc <- 2*(mean(as.numeric(ranked_data[index,2])) - mean(as.numeric(ranked_data[-index,2])))/nrow(Log_vec_2)
-    sy <- append(sy,s.calc)
-  }
-  Out_matrix <- as.data.frame(cbind(x = as.numeric(sx), y = as.numeric(sy), annotation = sigManova_short[,1]))
-  Out_matrix$x <- as.numeric(Out_matrix$x)
-  Out_matrix$y <- as.numeric(Out_matrix$y)
-  return(Out_matrix)
-}
-
-Entrichment_2D_LeanvsT2D_GOCC <- Enrichment_2D_parallel(unique(matrix_annotations_GOCC$Annotation),matrix_to_1d_GOCC_LogLean, matrix_to_1d_GOCC_LogT2D, LogLean, LogT2D)
-Entrichment_2D_LeanvsT2D_GOBP <- Enrichment_2D_parallel(unique(matrix_annotations_GOBP$Annotation),matrix_to_1d_GOBP_LogLean, matrix_to_1d_GOBP_LogT2D, LogLean, LogT2D)
-Entrichment_2D_LeanvsT2D_GOMF <- Enrichment_2D_parallel(unique(matrix_annotations_GOMF$Annotation),matrix_to_1d_GOMF_LogLean, matrix_to_1d_GOMF_LogT2D, LogLean, LogT2D)
+Entrichment_2D_LeanvsT2D_GOCC <- Enrichment_2D_parallel(matrix_annotations_GOCC, LogLean, LogT2D, 0.05)
+Entrichment_2D_LeanvsT2D_GOCC$GO <- "GOCC"
+Entrichment_2D_LeanvsT2D_GOBP <- Enrichment_2D_parallel(matrix_annotations_GOBP, LogLean, LogT2D, 0.05)
+Entrichment_2D_LeanvsT2D_GOBP$GO <- "GOBP"
+Entrichment_2D_LeanvsT2D_GOMF <- Enrichment_2D_parallel(matrix_annotations_GOMF, LogLean, LogT2D, 0.05)
+Entrichment_2D_LeanvsT2D_GOMF$GO <- "GOMF"
 
 Enrichment_2d_LeanvsT2D <- rbind(Entrichment_2D_LeanvsT2D_GOCC,Entrichment_2D_LeanvsT2D_GOBP,Entrichment_2D_LeanvsT2D_GOMF)
-ggplot(Enrichment_2d_LeanvsT2D, aes(x,y)) + geom_point()
+ggplot(Enrichment_2d_LeanvsT2D, aes(x,y,label = annotation, color = GO)) + 
+  geom_point() +
+  geom_text_repel() +
+  theme_minimal() +
+  scale_color_manual(values =c("#440154FF", "#55C667FF") , "GO term") +
+  labs(x = "Lean pre vs Post", y = "T2D pre vs Post", title = "2D enrichment analysis Lean vs T2D") + 
+  theme(plot.title = element_text(hjust = 0.5))
 
-
-Entrichment_2D_LeanvsObese_GOCC <- Enrichment_2D_parallel(unique(matrix_annotations_GOCC$Annotation),matrix_to_1d_GOCC_LogLean, matrix_to_1d_GOCC_LogObese, LogLean, LogObese)
-Entrichment_2D_LeanvsObese_GOBP <- Enrichment_2D_parallel(unique(matrix_annotations_GOBP$Annotation),matrix_to_1d_GOBP_LogLean, matrix_to_1d_GOBP_LogObese, LogLean, LogObese)
-Entrichment_2D_LeanvsObese_GOMF <- Enrichment_2D_parallel(unique(matrix_annotations_GOMF$Annotation),matrix_to_1d_GOMF_LogLean, matrix_to_1d_GOMF_LogObese, LogLean, LogObese)
+Entrichment_2D_LeanvsObese_GOCC <- Enrichment_2D_parallel(matrix_annotations_GOCC, LogLean, LogObese, 0.05)
+Entrichment_2D_LeanvsObese_GOCC$GO <- "GOCC"
+Entrichment_2D_LeanvsObese_GOBP <- Enrichment_2D_parallel(matrix_annotations_GOBP, LogLean, LogObese, 0.05)
+Entrichment_2D_LeanvsObese_GOBP$GO <- "GOBP"
+Entrichment_2D_LeanvsObese_GOMF <- Enrichment_2D_parallel(matrix_annotations_GOMF, LogLean, LogObese, 0.05)
+Entrichment_2D_LeanvsObese_GOMF$GO <- "GOMF"
 
 Enrichment_2d_LeanvsObese <- rbind(Entrichment_2D_LeanvsObese_GOCC,Entrichment_2D_LeanvsObese_GOBP,Entrichment_2D_LeanvsObese_GOMF)
-ggplot(Enrichment_2d_LeanvsObese, aes(x,y)) + geom_point()
+ggplot(Enrichment_2d_LeanvsObese, aes(x,y,label = annotation, color = GO)) + 
+  geom_point() +
+  geom_text_repel() +
+  theme_minimal() +
+  scale_color_manual(values =c("#440154FF", "#55C667FF") , "GO term") 
 
 
-Entrichment_2D_T2DvsObese_GOCC <- Enrichment_2D_parallel(unique(matrix_annotations_GOCC$Annotation),matrix_to_1d_GOCC_LogT2D, matrix_to_1d_GOCC_LogObese, LogT2D, LogObese)
-Entrichment_2D_T2DvsObese_GOBP <- Enrichment_2D_parallel(unique(matrix_annotations_GOBP$Annotation),matrix_to_1d_GOBP_LogT2D, matrix_to_1d_GOBP_LogObese, LogT2D, LogObese)
-Entrichment_2D_T2DvsObese_GOMF <- Enrichment_2D_parallel(unique(matrix_annotations_GOMF$Annotation),matrix_to_1d_GOMF_LogT2D, matrix_to_1d_GOMF_LogObese, LogT2D, LogObese)
+
+Entrichment_2D_T2DvsObese_GOCC <- Enrichment_2D_parallel(matrix_annotations_GOCC, LogT2D, LogObese, 0.05)
+Entrichment_2D_T2DvsObese_GOCC$GO <- "GOCC"
+Entrichment_2D_T2DvsObese_GOBP <- Enrichment_2D_parallel(matrix_annotations_GOBP, LogT2D, LogObese, 0.05)
+Entrichment_2D_T2DvsObese_GOBP$GO <- "GOBP"
+Entrichment_2D_T2DvsObese_GOMF <- Enrichment_2D_parallel(matrix_annotations_GOMF, LogT2D, LogObese, 0.05)
+Entrichment_2D_T2DvsObese_GOMF$GO <- "GOMF"
 
 Enrichment_2d_T2DvsObese <- rbind(Entrichment_2D_T2DvsObese_GOCC,Entrichment_2D_T2DvsObese_GOBP,Entrichment_2D_T2DvsObese_GOMF)
-ggplot(Enrichment_2d_T2DvsObese, aes(x,y)) + geom_point()
+ggplot(Enrichment_2d_T2DvsObese, aes(x,y,label = annotation, color = GO)) + 
+  geom_point() +
+  geom_text_repel() +
+  theme_minimal() +
+  scale_color_manual(values =c("#440154FF", "#55C667FF") , "GO term")
