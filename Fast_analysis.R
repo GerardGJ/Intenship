@@ -133,7 +133,8 @@ Xiao_correction <- function(matrix_limma){
   return(matrix_limma[,4] ** abs(matrix_limma[,1]))
 }
 
-enrichment_1D_parallel <- function(annotations,matrix_anots_pvals){
+enrichment_1D_parallel <- function(matrix_values, Log_vec){
+  annotations = unique(matrix_values[,1])
   n.cores <- parallel::detectCores() - 1
   my.cluster <- parallel::makeCluster(n.cores, type = "PSOCK")
   print(my.cluster)
@@ -142,20 +143,23 @@ enrichment_1D_parallel <- function(annotations,matrix_anots_pvals){
   foreach::getDoParWorkers()
 
   sigWil <- foreach(anot = annotations) %dopar% {
-    index <- which(matrix_anots_pvals[,2] == anot)
-    wilcox <- wilcox.test(as.numeric(matrix_anots_pvals[index,3]), as.numeric(matrix_anots_pvals[-index,3]))
+    make_groups <- matrix_values[matrix_values[,1] == anot,2]
+    index <- which(Log_vec[,1] %in% make_groups)
+    wilcox <- wilcox.test(as.numeric(Log_vec[index,2]), as.numeric(Log_vec[-index,2]))
     return(c(anot, wilcox$p.value))
   }
 
   sigWil <- as.data.frame(t(rbind.data.frame(sigWil)))
   colnames(sigWil) <- c("Annotation", "pVal")
   sigWil$p.adj <- p.adjust(sigWil$pVal, method = "BH")
-  sigWil <- sigWil[sigWil$p.adj <= 0.05,]
+  sigWil <- sigWil[sigWil$p.adj <= 0.1,]
 
   s <- c()
   for(anot in sigWil[,1]){
-    index <- which(matrix_anots_pvals[,2] == anot)
-    s.calc <- 2*(mean(rank(matrix_anots_pvals[index,3])) - mean(rank(matrix_anots_pvals[-index,3])))/nrow(matrix_anots_pvals)
+    make_groups <- matrix_values[matrix_values[,1] == anot,2]
+    index <- which(Log_vec[,1] %in% make_groups)
+    ranked_data <- rank(Log_vec[,2])
+    s.calc <- 2*(mean(ranked_data[index]) - mean(ranked_data[-index]))/nrow(matrix_values)
   s <- append(s,s.calc)
   }
   return(cbind(sigWil, s))
@@ -912,7 +916,6 @@ matrix_annotations <- read.table(gzfile("/Users/Gerard/Desktop/Annotations/mainA
 matrix_annotations_GOBP = data.frame()
 matrix_annotations_GOMF = data.frame()
 matrix_annotations_GOCC = data.frame()
-matrix_annotations_KEGG = data.frame()
 
 for(Protein.IDs in rownames(Exprs_adipose)){
   id = strsplit(x = Protein.IDs, split = ";")[[1]][1]
@@ -932,11 +935,6 @@ for(Protein.IDs in rownames(Exprs_adipose)){
     GOMF <- strsplit(x = row_to_annotate$GOMF.name, split = ";")[[1]]
     tojoin <- merge(GOMF,id)
     matrix_annotations_GOMF = rbind(matrix_annotations_GOMF,tojoin)
-    
-    KEGG <- strsplit(x = row_to_annotate$KEGG.name, split = ";")[[1]]
-    tojoin <- merge(KEGG,id)
-    matrix_annotations_KEGG = rbind(matrix_annotations_KEGG,tojoin)
-    
   }
 }
 
@@ -958,101 +956,6 @@ for(i in seq_along(rownames(matrix_annotations_GOCC_aggregate))){
   toGSEA_GOCC[[matrix_annotations_GOCC_aggregate[i,1]]] <- unlist(strsplit(x = matrix_annotations_GOCC_aggregate$x[[i]], split = " "))
 }
 
-matrix_annotations_KEGG_aggregate <- aggregate(matrix_annotations_KEGG$y, list(matrix_annotations_KEGG$x), paste ,collapse=" ")
-toGSEA_KEGG <- list()
-for(i in seq_along(rownames(matrix_annotations_KEGG_aggregate))){
-  toGSEA_KEGG[[matrix_annotations_KEGG_aggregate[i,1]]] <- unlist(strsplit(x = matrix_annotations_KEGG_aggregate$x[[i]], split = " "))
-}
-
-#### Enrichment analysis on correlation Pairwise ####
-#Enrichment
-toGSEA_r_GIR <- as.numeric(result_GIR$correlation)
-names(toGSEA_r_GIR) <- result_GIR$Protein
-toGSEA_r_GIR <- toGSEA_r_GIR[order(toGSEA_r_GIR, decreasing = F)]
-
-fgseaRes_GOBP_pair <- fgsea(pathways = toGSEA_GOBP, 
-                            stats    = toGSEA_r_GIR,
-                            eps      = 0.0,
-                            minSize  = 1,
-                            maxSize  = 500)
-
-fgseaRes_GOMF_pair <- fgsea(pathways = toGSEA_GOMF, 
-                            stats    = toGSEA_r_GIR,
-                            eps      = 0.0,
-                            minSize  = 1,
-                            maxSize  = 500)
-
-fgseaRes_GOCC_pair <- fgsea(pathways = toGSEA_GOCC, 
-                            stats    = toGSEA_r_GIR,
-                            eps      = 0.0,
-                            minSize  = 1,
-                            maxSize  = 500)
-
-fgseaRes_KEGG_pair <- fgsea(pathways = toGSEA_KEGG, 
-                            stats    = toGSEA_r_GIR,
-                            eps      = 0.0,
-                            minSize  = 1,
-                            maxSize  = 500)
-
-#### FGSEA on abs
-
-toGSEA_r_GIR_abs <- abs(as.numeric(result_GIR$correlation))
-names(toGSEA_r_GIR_abs) <- result_GIR$Protein
-toGSEA_r_GIR_abs <- toGSEA_r_GIR_abs[order(toGSEA_r_GIR_abs, decreasing = F)]
-
-fgseaRes_GOBP_pair <- fgsea(pathways = toGSEA_GOBP, 
-                            stats    = toGSEA_r_GIR_abs,
-                            eps      = 0.0,
-                            minSize  = 1,
-                            maxSize  = 500)
-
-fgseaRes_GOMF_pair <- fgsea(pathways = toGSEA_GOMF, 
-                            stats    = toGSEA_r_GIR_abs,
-                            eps      = 0.0,
-                            minSize  = 1,
-                            maxSize  = 500)
-
-fgseaRes_GOCC_pair <- fgsea(pathways = toGSEA_GOCC, 
-                            stats    = toGSEA_r_GIR_abs,
-                            eps      = 0.0,
-                            minSize  = 1,
-                            maxSize  = 500)
-
-fgseaRes_KEGG_pair <- fgsea(pathways = toGSEA_KEGG, 
-                            stats    = toGSEA_r_GIR_abs,
-                            eps      = 0.0,
-                            minSize  = 1,
-                            maxSize  = 500)
-
-#FGSEA on pvals
-toGSEA_r_GIR_pvals <- abs(as.numeric(result_GIR$pVal))
-names(toGSEA_r_GIR_pvals) <- result_GIR$Protein
-toGSEA_r_GIR_pvals <- toGSEA_r_GIR_pvals[order(toGSEA_r_GIR_pvals, decreasing = F)]
-
-fgseaRes_GOBP_pval <- fgsea(pathways = toGSEA_GOBP, 
-                            stats    = toGSEA_r_GIR_pvals,
-                            eps      = 0.0,
-                            minSize  = 1,
-                            maxSize  = 500)
-
-fgseaRes_GOMF_pval <- fgsea(pathways = toGSEA_GOMF, 
-                            stats    = toGSEA_r_GIR_pvals,
-                            eps      = 0.0,
-                            minSize  = 1,
-                            maxSize  = 500)
-
-fgseaRes_GOCC_pval <- fgsea(pathways = toGSEA_GOCC, 
-                            stats    = toGSEA_r_GIR_pvals,
-                            eps      = 0.0,
-                            minSize  = 1,
-                            maxSize  = 500)
-
-fgseaRes_KEGG_pval <- fgsea(pathways = toGSEA_KEGG, 
-                            stats    = toGSEA_r_GIR_pvals,
-                            eps      = 0.0,
-                            minSize  = 1,
-                            maxSize  = 500)
-
 #### LIMMA####
 #Get the logFC using the limma package
 Group <- factor(combined, levels=c("LeanPre","LeanPost", "ObesePre", "ObesePost", "T2DPre", "T2DPost"))
@@ -1067,7 +970,18 @@ corfit$consensus
 
 fit <- eBayes(lmFit(Exprs_adipose,design,block=df$replicate,correlation=corfit$consensus))
 
-cm <- makeContrasts(GroupLeanPost - GroupLeanPre, GroupObesePost - GroupObesePre, GroupT2DPost - GroupT2DPre, (GroupLeanPost - GroupLeanPre + GroupObesePost - GroupObesePre + GroupT2DPost - GroupT2DPre)/6,(GroupT2DPost - GroupT2DPre) - (GroupObesePost - GroupObesePre), (GroupObesePost - GroupObesePre) - (GroupLeanPost - GroupLeanPre), (GroupT2DPost - GroupT2DPre) - (GroupLeanPost - GroupLeanPre), ((GroupT2DPost - GroupT2DPre)- (GroupObesePost - GroupObesePre) - (GroupLeanPost - GroupLeanPre))/6,levels=design)
+cm <- makeContrasts(GroupLeanPost - GroupLeanPre, 
+                    GroupObesePost - GroupObesePre, 
+                    GroupT2DPost - GroupT2DPre, 
+                    (GroupLeanPost - GroupLeanPre + GroupObesePost - GroupObesePre + GroupT2DPost - GroupT2DPre)/6,
+                    (GroupT2DPost - GroupT2DPre) - (GroupObesePost - GroupObesePre), 
+                    (GroupObesePost - GroupObesePre) - (GroupLeanPost - GroupLeanPre), 
+                    (GroupT2DPost - GroupT2DPre) - (GroupLeanPost - GroupLeanPre), 
+                    ((GroupT2DPost - GroupT2DPre)- (GroupObesePost - GroupObesePre) - (GroupLeanPost - GroupLeanPre))/6,
+                    GroupObesePre - GroupLeanPre, 
+                    GroupT2DPre - GroupLeanPre, 
+                    GroupT2DPre - GroupObesePre,
+                    levels=design)
 fit2 <- eBayes(contrasts.fit(fit, cm))
 
 Effecttrain_Lean <- topTable(fit2, coef = 1, number = Inf, sort.by = "none")
@@ -1094,40 +1008,19 @@ Interaction_LvsT$Xiao <- Xiao_correction(Interaction_LvsT)
 Interaction_main <- topTable(fit2, coef = 8, number = Inf, sort.by = "none")
 Interaction_main$Xiao <- Xiao_correction(Interaction_main)
 
-
-#### LIMMA 2 ####
-
-Group <- factor(grps, levels=c("Lean","Obese", "T2D"))
-Training <- factor(Treatment, levels=c("Pre","Post"))
-
-#The following design matrix allows for initial subtraction of main effect of training.
-design2 <- model.matrix(~ 0 + Group*Training + cluster) # Adding cluster-batch effect as covariate
-colnames(design2)[5:8] <- c("cluser_one","cluster_two","OBESEPOST","T2DPOST")
-
-corfit <- duplicateCorrelation(Exprs_adipose, design2, block=df$replicate)
-corfit$consensus
-
-fit <- eBayes(lmFit(Exprs_adipose,design2,block=df$replicate,correlation=corfit$consensus))
-cm <- makeContrasts(GroupObese - GroupLean, GroupT2D - GroupLean, GroupT2D - GroupObese, levels=design2)
-fit2 <- eBayes(contrasts.fit(fit, cm))
-
-#Main effect of groups. This takes only the "Pre's"
-mainEffect_GROUP <- topTable(fit2, coef = 1:3, number = Inf,sort.by = "none")
-main_effect_sign <- topTable(fit2, coef = 1:3, p.value = 0.05, number = Inf, lfc = 0.58)
-
-
-OBESE_vs_LEAN <- topTable(fit2, coef = 1, number = Inf, sort.by = "none")
+OBESE_vs_LEAN <- topTable(fit2, coef = 9, number = Inf, sort.by = "none")
 OBESE_vs_LEAN$Xiao <- Xiao_correction(OBESE_vs_LEAN)
 logFC_OvsL <- OBESE_vs_LEAN$logFC
 
-T2D_vs_LEAN <- topTable(fit2, coef = 2, number = Inf, sort.by = "none")
+T2D_vs_LEAN <- topTable(fit2, coef = 10, number = Inf, sort.by = "none")
 T2D_vs_LEAN$Xiao <- Xiao_correction(T2D_vs_LEAN)
 logFC_TvsL <- T2D_vs_LEAN$logFC
 
-T2D_vs_OBESE <- topTable(fit2, coef = 3, number = Inf, sort.by = "none")
+T2D_vs_OBESE <- topTable(fit2, coef = 11, number = Inf, sort.by = "none")
 T2D_vs_OBESE$Xiao <- Xiao_correction(T2D_vs_OBESE)
 logFC_TvsO <- T2D_vs_OBESE$logFC
 
+mainEffect_GROUP <- topTable(fit2, coef = 9:11, number = Inf,sort.by = "none")
 
 #### LIMMA Lean only ####
 Exprs_adipose_lean <- Exprs_adipose[,Group == "Lean"]
@@ -1418,109 +1311,6 @@ ggarrange(LeanPlot, ObesePlot, T2DPlot, VennIndiv_Training_prop)
 ggarrange(LvsOPlot_I, OvsTPlot_I, LvsTPlot_I,VennIndiv_Interaction_prop)
 ggarrange(OvsLPlot_G, TvsOPlot_G, TvsLPlot_G, VennIndiv_Group_prop)
 
-#### Gene Set Enrichment analysis ####
-
-#Effect of training:
-
-LogLean <- t(Effecttrain_Lean$logFC)
-names(LogLean) <- rownames(Exprs_adipose)
-LogLean <- LogLean[order(LogLean, decreasing = F)]
-
-fgseaLean_GOBP <- fgsea(pathways = toGSEA_GOBP, 
-                        stats    = LogLean)
-
-fgseaLean_GOCC <- fgsea(pathways = toGSEA_GOCC, 
-                        stats    = LogLean)
-
-fgseaLean_GOMF <- fgsea(pathways = toGSEA_GOMF, 
-                        stats    = LogLean)
-
-fgseaLean_KEGG <- fgsea(pathways = toGSEA_KEGG, 
-                            stats    = LogLean)
-
-
-LogObese <- t(Effecttrain_Obese$logFC)
-names(LogObese) <- rownames(Exprs_adipose)
-LogObese <- LogObese[order(LogObese, decreasing = F)]
-
-fgseaObese_GOBP <- fgsea(pathways = toGSEA_GOBP, 
-                        stats    = LogObese)
-
-fgseaObese_GOCC <- fgsea(pathways = toGSEA_GOCC, 
-                        stats    = LogObese)
-
-fgseaObese_GOMF <- fgsea(pathways = toGSEA_GOMF, 
-                        stats    = LogObese)
-
-fgseaObese_KEGG <- fgsea(pathways = toGSEA_KEGG, 
-                        stats    = LogObese)
-
-LogT2D <- t(Effecttrain_T2D$logFC)
-names(LogT2D) <- rownames(Exprs_adipose)
-LogT2D <- LogT2D[order(LogT2D, decreasing = F)]
-
-fgseaT2D_GOBP <- fgsea(pathways = toGSEA_GOBP, 
-                         stats    = LogT2D)
-
-fgseaT2D_GOCC <- fgsea(pathways = toGSEA_GOCC, 
-                         stats    = LogT2D)
-
-fgseaT2D_GOMF <- fgsea(pathways = toGSEA_GOMF, 
-                         stats    = LogT2D)
-
-fgseaT2D_KEGG <- fgsea(pathways = toGSEA_KEGG, 
-                         stats    = LogT2D)
-
-
-#Effect Interaction
-LogLvsO <- t(Interaction_LvsO$logFC)
-names(LogLvsO) <- rownames(Exprs_adipose)
-LogLvsO <- LogLvsO[order(LogLvsO, decreasing = F)]
-
-fgseaLvsO_GOBP <- fgsea(pathways = toGSEA_GOBP, 
-                        stats    = LogLvsO)
-
-fgseaLvsO_GOCC <- fgsea(pathways = toGSEA_GOCC, 
-                        stats    = LogLvsO)
-
-fgseaLvsO_GOMF <- fgsea(pathways = toGSEA_GOMF, 
-                        stats    = LogLvsO)
-
-fgseaLvsO_KEGG <- fgsea(pathways = toGSEA_KEGG, 
-                        stats    = LogLvsO)
-
-
-LogLvsT <- t(Interaction_LvsT$logFC)
-names(LogLvsT) <- rownames(Exprs_adipose)
-LogLvsT <- LogLvsT[order(LogLvsT, decreasing = F)]
-
-fgseaLvsT_GOBP <- fgsea(pathways = toGSEA_GOBP, 
-                         stats    = LogLvsT)
-
-fgseaLvsT_GOCC <- fgsea(pathways = toGSEA_GOCC, 
-                         stats    = LogLvsT)
-
-fgseaLvsT_GOMF <- fgsea(pathways = toGSEA_GOMF, 
-                         stats    = LogLvsT)
-
-fgseaLvsT_KEGG <- fgsea(pathways = toGSEA_KEGG, 
-                         stats    = LogLvsT)
-
-LogOvsT <- t(Interaction_OvsT$logFC)
-names(LogOvsT) <- rownames(Exprs_adipose)
-LogOvsT <- LogOvsT[order(LogOvsT, decreasing = F)]
-
-fgseaOvsT_GOBP <- fgsea(pathways = toGSEA_GOBP, 
-                       stats    = LogOvsT)
-
-fgseaOvsT_GOCC <- fgsea(pathways = toGSEA_GOCC, 
-                       stats    = LogOvsT)
-
-fgseaOvsT_GOMF <- fgsea(pathways = toGSEA_GOMF, 
-                       stats    = LogOvsT)
-
-fgseaOvsT_KEGG <- fgsea(pathways = toGSEA_KEGG, 
-                       stats    = LogOvsT)
 #### Finding stable protein across all samples ####
 
 #Lowest CV across all samples
@@ -1537,80 +1327,149 @@ CV <- CV[order(CV, decreasing = F)]
 head(CV)
 
 #### 1D enrichment ####
-#Pval correlation
-colnames(matrix_annotations_GOBP) <- c("Annotation", "Protein")
-matrix_to_1D_GOBP_pval <- merge(matrix_annotations_GOBP,result_GIR[,c(2,4)], by = "Protein")
-colnames(matrix_annotations_GOCC) <- c("Annotation", "Protein")
-matrix_to_1D_GOCC_pval <- merge(matrix_annotations_GOCC,result_GIR[,c(2,4)], by = "Protein")
-colnames(matrix_annotations_GOMF) <- c("Annotation", "Protein")
-matrix_to_1D_GOMF_pval <- merge(matrix_annotations_GOMF,result_GIR[,c(2,4)], by = "Protein")
-colnames(matrix_annotations_KEGG) <- c("Annotation", "Protein")
-matrix_to_1D_KEGG_pval <- merge(matrix_annotations_KEGG,result_GIR[,c(2,4)], by = "Protein")
-
-
-OneD_Enrichment_GIR <- enrichment_1D_with_pvals(unique(matrix_annotations_GOBP$Annotation),matrix_to_1D)
-OneD_Enrichment_GIR_GOBP_p <- enrichment_1D_parallel(unique(matrix_annotations_GOBP$Annotation),matrix_to_1D_GOBP_pval)
-rownames(OneD_Enrichment_GIR_GOBP_p) <- 1:nrow(OneD_Enrichment_GIR_GOBP_p)
-OneD_Enrichment_GIR_GOCC_p <- enrichment_1D_parallel(unique(matrix_annotations_GOCC$Annotation),matrix_to_1D_GOCC_pval)
-rownames(OneD_Enrichment_GIR_GOCC_p) <- 1:nrow(OneD_Enrichment_GIR_GOCC_p)
-OneD_Enrichment_GIR_GOMF_p <- enrichment_1D_parallel(unique(matrix_annotations_GOMF$Annotation),matrix_to_1D_GOMF_pval)
-rownames(OneD_Enrichment_GIR_GOMF_p) <- 1:nrow(OneD_Enrichment_GIR_GOMF_p)
-OneD_Enrichment_GIR_KEGG_p <- enrichment_1D_parallel(unique(matrix_annotations_KEGG$Annotation),matrix_to_1D_KEGG_pval)
-rownames(OneD_Enrichment_GIR_KEGG_p) <- 1:nrow(OneD_Enrichment_GIR_KEGG_p)
-
 #LogFC Lean
-LogLean <- cbind(rownames(Effecttrain_Lean), as.numeric(Effecttrain_Lean$logFC))
+LogLean <- cbind(rownames(Effecttrain_Lean), as.numeric(Effecttrain_Lean[,1]))
 colnames(LogLean) <- c("Protein", "LogFC")
-matrix_to_1d_GOBP_LogLean <- merge(matrix_annotations_GOBP, LogLean, by = "Protein")
-matrix_to_1d_GOMF_LogLean <- merge(matrix_annotations_GOMF, LogLean, by = "Protein")
-matrix_to_1d_GOCC_LogLean <- merge(matrix_annotations_GOCC, LogLean, by = "Protein")
-matrix_to_1d_KEGG_LogLean <- merge(matrix_annotations_KEGG, LogLean, by = "Protein")
 
-OneD_Enrichment_GIR_GOBP_LogL <- enrichment_1D_parallel(unique(matrix_annotations_GOBP$Annotation),matrix_to_1d_GOBP_LogLean)
-rownames(OneD_Enrichment_GIR_GOBP_LogL) <- 1:nrow(OneD_Enrichment_GIR_GOBP_LogL)
-OneD_Enrichment_GIR_GOCC_LogL <- enrichment_1D_parallel(unique(matrix_annotations_GOCC$Annotation),matrix_to_1d_GOCC_LogLean)
-rownames(OneD_Enrichment_GIR_GOCC_LogL) <- 1:nrow(OneD_Enrichment_GIR_GOCC_LogL)
-OneD_Enrichment_GIR_GOMF_LogL <- enrichment_1D_parallel(unique(matrix_annotations_GOMF$Annotation),matrix_to_1d_GOMF_LogLean)
-rownames(OneD_Enrichment_GIR_GOMF_LogL) <- 1:nrow(OneD_Enrichment_GIR_GOMF_LogL)
-OneD_Enrichment_GIR_KEGG_LogL <- enrichment_1D_parallel(unique(matrix_annotations_KEGG$Annotation),matrix_to_1d_KEGG_LogLean)
-rownames(OneD_Enrichment_GIR_KEGG_LogL) <- 1:nrow(OneD_Enrichment_GIR_KEGG_LogL)
+OneD_Enrichment_GOBP_LogL <- enrichment_1D_parallel(matrix_annotations_GOBP, LogLean)
+rownames(OneD_Enrichment_GOBP_LogL) <- 1:nrow(OneD_Enrichment_GOBP_LogL)
+OneD_Enrichment_GOCC_LogL <- enrichment_1D_parallel(matrix_annotations_GOCC, LogLean)
+rownames(OneD_Enrichment_GOCC_LogL) <- 1:nrow(OneD_Enrichment_GOCC_LogL)
+OneD_Enrichment_GOMF_LogL <- enrichment_1D_parallel(matrix_annotations_GOMF, LogLean)
+rownames(OneD_Enrichment_GOMF_LogL) <- 1:nrow(OneD_Enrichment_GOMF_LogL)
 
 #LogFC Obese
 LogObese <- cbind(rownames(Effecttrain_Obese), as.numeric(Effecttrain_Obese$logFC))
 colnames(LogObese) <- c("Protein", "LogFC")
-matrix_to_1d_GOBP_LogObese <- merge(matrix_annotations_GOBP, LogObese, by = "Protein")
-matrix_to_1d_GOMF_LogObese <- merge(matrix_annotations_GOMF, LogObese, by = "Protein")
-matrix_to_1d_GOCC_LogObese <- merge(matrix_annotations_GOCC, LogObese, by = "Protein")
-matrix_to_1d_KEGG_LogObese <- merge(matrix_annotations_KEGG, LogObese, by = "Protein")
 
-OneD_Enrichment_GIR_GOBP_LogO <- enrichment_1D_parallel(unique(matrix_annotations_GOBP$Annotation),matrix_to_1d_GOBP_LogObese)
-rownames(OneD_Enrichment_GIR_GOBP_LogO) <- 1:nrow(OneD_Enrichment_GIR_GOBP_LogO)
-OneD_Enrichment_GIR_GOCC_LogO <- enrichment_1D_parallel(unique(matrix_annotations_GOCC$Annotation),matrix_to_1d_GOCC_LogObese)
-rownames(OneD_Enrichment_GIR_GOCC_LogO) <- 1:nrow(OneD_Enrichment_GIR_GOCC_LogO)
-OneD_Enrichment_GIR_GOMF_LogO <- enrichment_1D_parallel(unique(matrix_annotations_GOMF$Annotation),matrix_to_1d_GOMF_LogObese)
-rownames(OneD_Enrichment_GIR_GOMF_LogO) <- 1:nrow(OneD_Enrichment_GIR_GOMF_LogO)
-OneD_Enrichment_GIR_KEGG_LogO <- enrichment_1D_parallel(unique(matrix_annotations_KEGG$Annotation),matrix_to_1d_KEGG_LogObese)
-rownames(OneD_Enrichment_GIR_KEGG_LogO) <- 1:nrow(OneD_Enrichment_GIR_KEGG_LogO)
-
+OneD_Enrichment_GOBP_LogO <- enrichment_1D_parallel(matrix_annotations_GOBP, LogObese)
+rownames(OneD_Enrichment_GOBP_LogO) <- 1:nrow(OneD_Enrichment_GOBP_LogO)
+OneD_Enrichment_GOCC_LogO <- enrichment_1D_parallel(matrix_annotations_GOCC, LogObese)
+rownames(OneD_Enrichment_GOCC_LogO) <- 1:nrow(OneD_Enrichment_GOCC_LogO)
+OneD_Enrichment_GOMF_LogO <- enrichment_1D_parallel(matrix_annotations_GOMF, LogObese)
+rownames(OneD_Enrichment_GOMF_LogO) <- 1:nrow(OneD_Enrichment_GOMF_LogO)
 
 #LogFC T2D
 LogT2D <- cbind(rownames(Effecttrain_T2D), as.numeric(Effecttrain_T2D$logFC))
 colnames(LogT2D) <- c("Protein", "LogFC")
-matrix_to_1d_GOBP_LogT2D <- merge(matrix_annotations_GOBP, LogT2D, by = "Protein")
-matrix_to_1d_GOMF_LogT2D <- merge(matrix_annotations_GOMF, LogT2D, by = "Protein")
-matrix_to_1d_GOCC_LogT2D <- merge(matrix_annotations_GOCC, LogT2D, by = "Protein")
-matrix_to_1d_KEGG_LogT2D <- merge(matrix_annotations_KEGG, LogT2D, by = "Protein")
 
-OneD_Enrichment_GIR_GOBP_LogT <- enrichment_1D_parallel(unique(matrix_annotations_GOBP$Annotation),matrix_to_1d_GOBP_LogT2D)
-rownames(OneD_Enrichment_GIR_GOBP_LogT) <- 1:nrow(OneD_Enrichment_GIR_GOBP_LogT)
-OneD_Enrichment_GIR_GOCC_LogT <- enrichment_1D_parallel(unique(matrix_annotations_GOCC$Annotation),matrix_to_1d_GOCC_LogT2D)
-rownames(OneD_Enrichment_GIR_GOCC_LogT) <- 1:nrow(OneD_Enrichment_GIR_GOCC_LogT)
-OneD_Enrichment_GIR_GOMF_LogT <- enrichment_1D_parallel(unique(matrix_annotations_GOMF$Annotation),matrix_to_1d_GOMF_LogT2D)
-rownames(OneD_Enrichment_GIR_GOMF_LogT) <- 1:nrow(OneD_Enrichment_GIR_GOMF_LogT)
-OneD_Enrichment_GIR_KEGG_LogT <- enrichment_1D_parallel(unique(matrix_annotations_KEGG$Annotation),matrix_to_1d_KEGG_LogT2D)
-rownames(OneD_Enrichment_GIR_KEGG_LogT) <- 1:nrow(OneD_Enrichment_GIR_KEGG_LogT)
+OneD_Enrichment_GOBP_LogT <- enrichment_1D_parallel(matrix_annotations_GOBP, LogT2D)
+rownames(OneD_Enrichment_GOBP_LogT) <- 1:nrow(OneD_Enrichment_GOBP_LogT)
+OneD_Enrichment_GOCC_LogT <- enrichment_1D_parallel(matrix_annotations_GOCC, LogT2D)
+rownames(OneD_Enrichment_GOCC_LogT) <- 1:nrow(OneD_Enrichment_GOCC_LogT)
+OneD_Enrichment_GOMF_LogT <- enrichment_1D_parallel(matrix_annotations_GOMF, LogT2D)
+rownames(OneD_Enrichment_GOMF_LogT) <- 1:nrow(OneD_Enrichment_GOMF_LogT)
 
+#Xiao Lean
+XiaoLean <- cbind(rownames(Effecttrain_Lean), as.numeric(Effecttrain_Lean[,7]))
+colnames(XiaoLean) <- c("Protein", "Xiao")
 
+OneD_Enrichment_GOBP_XiaoL <- enrichment_1D_parallel(matrix_annotations_GOBP, XiaoLean)
+rownames(OneD_Enrichment_GOBP_XiaoL) <- 1:nrow(OneD_Enrichment_GOBP_XiaoL)
+OneD_Enrichment_GOCC_XiaoL <- enrichment_1D_parallel(matrix_annotations_GOCC, XiaoLean)
+rownames(OneD_Enrichment_GOCC_XiaoL) <- 1:nrow(OneD_Enrichment_GOCC_XiaoL)
+OneD_Enrichment_GOMF_XiaoL <- enrichment_1D_parallel(matrix_annotations_GOMF, XiaoLean)
+rownames(OneD_Enrichment_GOMF_XiaoL) <- 1:nrow(OneD_Enrichment_GOMF_XiaoL)
+
+#Xiao Obese
+XiaoObese <- cbind(rownames(Effecttrain_Obese), as.numeric(Effecttrain_Obese[,7]))
+colnames(XiaoObese) <- c("Protein", "Xiao")
+
+OneD_Enrichment_GOBP_XiaoO <- enrichment_1D_parallel(matrix_annotations_GOBP, LogObese)
+rownames(OneD_Enrichment_GOBP_XiaoO) <- 1:nrow(OneD_Enrichment_GOBP_XiaoO)
+OneD_Enrichment_GOCC_XiaoO <- enrichment_1D_parallel(matrix_annotations_GOCC, LogObese)
+rownames(OneD_Enrichment_GOCC_XiaoO) <- 1:nrow(OneD_Enrichment_GOCC_XiaoO)
+OneD_Enrichment_GOMF_XiaoO <- enrichment_1D_parallel(matrix_annotations_GOMF, LogObese)
+rownames(OneD_Enrichment_GOMF_XiaoO) <- 1:nrow(OneD_Enrichment_GOMF_XiaoO)
+
+#Xiao T2D
+XiaoT2D <- cbind(rownames(Effecttrain_T2D), as.numeric(Effecttrain_T2D[,7]))
+colnames(XiaoT2D) <- c("Protein", "Xiao")
+
+OneD_Enrichment_GOBP_XiaoT <- enrichment_1D_parallel(matrix_annotations_GOBP, LogT2D)
+rownames(OneD_Enrichment_GOBP_XiaoT) <- 1:nrow(OneD_Enrichment_GOBP_XiaoT)
+OneD_Enrichment_GOCC_XiaoT <- enrichment_1D_parallel(matrix_annotations_GOCC, LogT2D)
+rownames(OneD_Enrichment_GOCC_XiaoT) <- 1:nrow(OneD_Enrichment_GOCC_XiaoT)
+OneD_Enrichment_GOMF_XiaoT <- enrichment_1D_parallel(matrix_annotations_GOMF, LogT2D)
+rownames(OneD_Enrichment_GOMF_XiaoT) <- 1:nrow(OneD_Enrichment_GOMF_XiaoT)
+
+#Pvalue Lean
+PvalueLean <- cbind(rownames(Effecttrain_Lean), as.numeric(Effecttrain_Lean[,4]))
+colnames(PvalueLean) <- c("Protein", "Pvalue")
+
+OneD_Enrichment_GOBP_PvalueL <- enrichment_1D_parallel(matrix_annotations_GOBP, PvalueLean)
+rownames(OneD_Enrichment_GOBP_PvalueL) <- 1:nrow(OneD_Enrichment_GOBP_PvalueL)
+OneD_Enrichment_GOCC_PvalueL <- enrichment_1D_parallel(matrix_annotations_GOCC, PvalueLean)
+rownames(OneD_Enrichment_GOCC_PvalueL) <- 1:nrow(OneD_Enrichment_GOCC_PvalueL)
+OneD_Enrichment_GOMF_PvalueL <- enrichment_1D_parallel(matrix_annotations_GOMF, PvalueLean)
+rownames(OneD_Enrichment_GOMF_PvalueL) <- 1:nrow(OneD_Enrichment_GOMF_PvalueL)
+
+#Pvalue Obese
+PvalueObese <- cbind(rownames(Effecttrain_Obese), as.numeric(Effecttrain_Obese[,4]))
+colnames(PvalueObese) <- c("Protein", "Pvalue")
+
+OneD_Enrichment_GOBP_PvalueO <- enrichment_1D_parallel(matrix_annotations_GOBP, PvalueObese)
+rownames(OneD_Enrichment_GOBP_PvalueO) <- 1:nrow(OneD_Enrichment_GOBP_PvalueO)
+OneD_Enrichment_GOCC_PvalueO <- enrichment_1D_parallel(matrix_annotations_GOCC, PvalueObese)
+rownames(OneD_Enrichment_GOCC_PvalueO) <- 1:nrow(OneD_Enrichment_GOCC_PvalueO)
+OneD_Enrichment_GOMF_PvalueO <- enrichment_1D_parallel(matrix_annotations_GOMF, PvalueObese)
+rownames(OneD_Enrichment_GOMF_PvalueO) <- 1:nrow(OneD_Enrichment_GOMF_PvalueO)
+
+#Pvalue T2D
+PvalueT2D <- cbind(rownames(Effecttrain_T2D), as.numeric(Effecttrain_T2D[,4]))
+colnames(PvalueT2D) <- c("Protein", "Pvalue")
+
+OneD_Enrichment_GOBP_PvalueT <- enrichment_1D_parallel(matrix_annotations_GOBP, PvalueT2D)
+rownames(OneD_Enrichment_GOBP_PvalueT) <- 1:nrow(OneD_Enrichment_GOBP_PvalueT)
+OneD_Enrichment_GOCC_PvalueT <- enrichment_1D_parallel(matrix_annotations_GOCC, PvalueT2D)
+rownames(OneD_Enrichment_GOCC_PvalueT) <- 1:nrow(OneD_Enrichment_GOCC_PvalueT)
+OneD_Enrichment_GOMF_PvalueT <- enrichment_1D_parallel(matrix_annotations_GOMF, PvalueT2D)
+rownames(OneD_Enrichment_GOMF_PvalueT) <- 1:nrow(OneD_Enrichment_GOMF_PvalueT)
+
+#Pvalue main
+PvalueMain <- cbind(rownames(Effecttrain_main), as.numeric(Effecttrain_main[,4]))
+colnames(PvalueMain) <- c("Protein", "Pvalue")
+
+OneD_Enrichment_GOBP_PvalueMain <- enrichment_1D_parallel(matrix_annotations_GOBP, PvalueMain)
+rownames(OneD_Enrichment_GOBP_PvalueMain) <- 1:nrow(OneD_Enrichment_GOBP_PvalueMain)
+OneD_Enrichment_GOCC_PvalueMain <- enrichment_1D_parallel(matrix_annotations_GOCC, PvalueMain)
+rownames(OneD_Enrichment_GOCC_PvalueMain) <- 1:nrow(OneD_Enrichment_GOCC_PvalueMain)
+OneD_Enrichment_GOMF_PvalueMain <- enrichment_1D_parallel(matrix_annotations_GOMF, PvalueMain)
+rownames(OneD_Enrichment_GOMF_PvalueMain) <- 1:nrow(OneD_Enrichment_GOMF_PvalueMain)
+
+#Interaction
+#LogFC LvsT
+LogLvsT <- cbind(rownames(Interaction_LvsT), as.numeric(Interaction_LvsT[,1]))
+colnames(LogLvsT) <- c("Protein", "LogFC")
+
+OneD_Enrichment_GOBP_LogLvsT <- enrichment_1D_parallel(matrix_annotations_GOBP, LogLvsT)
+rownames(OneD_Enrichment_GOBP_LogLvsT) <- 1:nrow(OneD_Enrichment_GOBP_LogLvsT)
+OneD_Enrichment_GOCC_LogLvsT <- enrichment_1D_parallel(matrix_annotations_GOCC, LogLvsT)
+rownames(OneD_Enrichment_GOCC_LogLvsT) <- 1:nrow(OneD_Enrichment_GOCC_LogLvsT)
+OneD_Enrichment_GOMF_LogLvsT <- enrichment_1D_parallel(matrix_annotations_GOMF, LogLvsT)
+rownames(OneD_Enrichment_GOMF_LogLvsT) <- 1:nrow(OneD_Enrichment_GOMF_LogLvsT)
+
+#LogFC LvsO
+LogLvsO <- cbind(rownames(Interaction_LvsO), as.numeric(Interaction_LvsO[,1]))
+colnames(LogLvsO) <- c("Protein", "LogFC")
+
+OneD_Enrichment_GOBP_LogLvsO <- enrichment_1D_parallel(matrix_annotations_GOBP, LogLvsO)
+rownames(OneD_Enrichment_GOBP_LogLvsO) <- 1:nrow(OneD_Enrichment_GOBP_LogLvsO)
+OneD_Enrichment_GOCC_LogLvsO <- enrichment_1D_parallel(matrix_annotations_GOCC, LogLvsO)
+rownames(OneD_Enrichment_GOCC_LogLvsO) <- 1:nrow(OneD_Enrichment_GOCC_LogLvsO)
+OneD_Enrichment_GOMF_LogLvsO <- enrichment_1D_parallel(matrix_annotations_GOMF, LogLvsO)
+rownames(OneD_Enrichment_GOMF_LogLvsO) <- 1:nrow(OneD_Enrichment_GOMF_LogLvsO)
+
+#LogFC OvsT
+LogOvsT <- cbind(rownames(Interaction_OvsT), as.numeric(Interaction_OvsT[,1]))
+colnames(LogOvsT) <- c("Protein", "LogFC")
+
+OneD_Enrichment_GOBP_LogOvsT <- enrichment_1D_parallel(matrix_annotations_GOBP, LogOvsT)
+rownames(OneD_Enrichment_GOBP_LogOvsT) <- 1:nrow(OneD_Enrichment_GOBP_LogOvsT)
+OneD_Enrichment_GOCC_LogOvsT <- enrichment_1D_parallel(matrix_annotations_GOCC, LogOvsT)
+rownames(OneD_Enrichment_GOCC_LogOvsT) <- 1:nrow(OneD_Enrichment_GOCC_LogOvsT)
+OneD_Enrichment_GOMF_LogOvsT <- enrichment_1D_parallel(matrix_annotations_GOMF, LogOvsT)
+rownames(OneD_Enrichment_GOMF_LogOvsT) <- 1:nrow(OneD_Enrichment_GOMF_LogOvsT)
 #### 2D enrichment ####
 
 Entrichment_2D_LeanvsT2D_GOCC <- Enrichment_2D_parallel(matrix_annotations_GOCC, LogLean, LogT2D, 0.05)
@@ -1627,7 +1486,9 @@ ggplot(Enrichment_2d_LeanvsT2D, aes(x,y,label = annotation, color = GO)) +
   theme_minimal() +
   scale_color_manual(values =c("#440154FF", "#55C667FF") , "GO term") +
   labs(x = "Lean pre vs Post", y = "T2D pre vs Post", title = "2D enrichment analysis Lean vs T2D") + 
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5))+
+  xlim(c(-1,1)) +
+  ylim(c(-1,1))
 
 Entrichment_2D_LeanvsObese_GOCC <- Enrichment_2D_parallel(matrix_annotations_GOCC, LogLean, LogObese, 0.05)
 Entrichment_2D_LeanvsObese_GOCC$GO <- "GOCC"
@@ -1641,7 +1502,9 @@ ggplot(Enrichment_2d_LeanvsObese, aes(x,y,label = annotation, color = GO)) +
   geom_point() +
   geom_text_repel() +
   theme_minimal() +
-  scale_color_manual(values =c("#440154FF", "#55C667FF") , "GO term") 
+  scale_color_manual(values =c("#440154FF", "#55C667FF") , "GO term")+
+  xlim(c(-1,1)) +
+  ylim(c(-1,1)) 
 
 
 
@@ -1657,4 +1520,23 @@ ggplot(Enrichment_2d_T2DvsObese, aes(x,y,label = annotation, color = GO)) +
   geom_point() +
   geom_text_repel() +
   theme_minimal() +
-  scale_color_manual(values =c("#440154FF", "#55C667FF") , "GO term")
+  scale_color_manual(values =c("#440154FF", "#55C667FF") , "GO term")+
+  xlim(c(-1,1)) +
+  ylim(c(-1,1))
+
+#Interaction
+Entrichment_2D_Inter_GOCC <- Enrichment_2D_parallel(matrix_annotations_GOCC, LogLvsT, LogOvsT, 0.1)
+Entrichment_2D_Inter_GOCC$GO <- "GOCC"
+Entrichment_2D_Inter_GOBP <- Enrichment_2D_parallel(matrix_annotations_GOBP, LogLvsT, LogOvsT, 0.1)
+Entrichment_2D_Inter_GOBP$GO <- "GOBP"
+Entrichment_2D_Inter_GOMF <- Enrichment_2D_parallel(matrix_annotations_GOMF, LogLvsT, LogOvsT, 0.1)
+Entrichment_2D_Inter_GOMF$GO <- "GOMF"
+
+Enrichment_2d_Inter <- rbind(Entrichment_2D_Inter_GOCC,Entrichment_2D_Inter_GOBP,Entrichment_2D_Inter_GOMF)
+ggplot(Enrichment_2d_Inter, aes(x,y,label = annotation, color = GO)) + 
+  geom_point(size = 2) +
+  geom_text_repel() +
+  theme_minimal() +
+  scale_color_manual(values =c("#440154FF", "#55C667FF") , "GO term") +
+  xlim(c(-0.6,0.6)) +
+  ylim(c(-0.6,0.6))
