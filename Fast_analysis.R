@@ -213,9 +213,11 @@ Enrichment_2D_parallel <- function(matrix1,Log_vec_1,Log_vec_2,pval_cutoff){
   Out_matrix$y <- as.numeric(Out_matrix$y)
   return(Out_matrix)
 }
-#### Preprocessing ####
-### Importing data
 
+#### Preprocessing ####
+#Setting Color variable
+color_plots <- c("#440154FF", "#73D055FF","#404788FF")
+### Importing data
 #Clinical data
 clinical_data <- as.data.frame(read_excel("Gerard_HIIT_data/Gerard_Clinical_data.xlsx"))
 clinical_data_noNA <- na.omit(clinical_data)
@@ -238,7 +240,6 @@ Input_cluster_correction <- read.delim("Gerard_HIIT_data/INPUT_CLUSTER_CORRECTIO
 reorder_idx <- match(colnames(Exprs_adipose),Input_cluster_correction$Sample_ID)
 Input_cluster_correction <- Input_cluster_correction[reorder_idx,]
 
-
 #Log2 transform expression data
 Exprs_adipose = as.matrix(log2(Exprs_adipose))
 rownames(Exprs_adipose) <- Adipose_proteome$Protein.Ids
@@ -257,32 +258,112 @@ Treatment <- paste0(df$Condition)
 combined <- paste0(df$Group, df$Condition)
 cluster <- as.factor(Input_cluster_correction$Cluster)
 
-#FILTERING
+#Sample quality
 Exprs_adipose_no_filter <- Exprs_adipose
+vec <- c()
+name <- colnames(Exprs_adipose_no_filter)
+for(i in seq_along(as.data.frame(Exprs_adipose_no_filter))){
+  len <- length(na.omit(Exprs_adipose_no_filter[,i]))
+  vec <-append(vec,len)
+}
+ggplot(mapping = aes(1:91,y = vec, fill = grps)) + 
+  geom_col(alpha = 0.8) +
+  theme_minimal() + 
+  theme(axis.text = element_text(size= 18),
+        axis.line = element_line(color="black", size = 1),
+        legend.key.size = unit(1, 'cm'), #change legend key size
+        legend.title = element_text(size = 20), #change legend title font size
+        legend.text = element_text(size=15),
+        panel.grid = element_blank(),
+        axis.title = element_text(size = 30)) +  #change legend text font size
+  scale_fill_manual("Groups",values = color_plots) +
+  scale_x_continuous(breaks = seq(from = 0, to = 90, by = 5)
+                     ,limits = c(0,92), expand = c(0,0)) + 
+  scale_y_continuous(limits = c(0,3000), expand = c(0,0)) +
+  labs(x = "Sample", y = "Quantified proteins") 
+
+#FILTERING
+Exprs_adipose_ranking <- selectGrps(Exprs_adipose, combined, 0.02, n=1)
 Exprs_adipose <- selectGrps(Exprs_adipose, combined, 0.5, n=6)
-#Exprs_adipose_to_PCA <- selectGrps(Exprs_adipose, combined, 1, n=6) # for PCA plot
+Exprs_adipose_to_PCA <- selectGrps(Exprs_adipose, combined, 1, n=6) # for PCA plot
 
 dim(Exprs_adipose)
 
-#Median normalise
+
+#Median normalize
 data_median <- apply(Exprs_adipose, 2, median, na.rm=TRUE)
 Exprs_adipose_notNotmalized <- Exprs_adipose
 Exprs_adipose_notImputed <- Exprs_adipose[] - data_median[col(Exprs_adipose)[]]
+#Exprs_adipose_notImputed <- medianScaling(Exprs_adipose)
 Exprs_adipose_normalizaed <- Exprs_adipose_notImputed
+Exprs_adipose_scaled <- medianScaling(Exprs_adipose)
+Exprs_adipose_ranking_scaled <- medianScaling(Exprs_adipose_ranking)
 
 ### Removing cluster-batch effect. Only for PCA. 
 Group <- factor(grps, levels=c("Lean","Obese", "T2D"))
 Training <- factor(Treatment, levels=c("Pre","Post"))
 design <- model.matrix(~ 0 + Group*Training)
 Exprs_adipose_noBatch_notImp <- removeBatchEffect(Exprs_adipose_notImputed, batch = cluster, design = design)
-#Exprs_adipose_to_PCA <- removeBatchEffect(Exprs_adipose_to_PCA, batch = cluster, design = design)
+Exprs_adipose_scaled <- removeBatchEffect(Exprs_adipose_scaled, batch = cluster, design = design)
+Exprs_adipose_ranking_scaled_nobatch <- removeBatchEffect(Exprs_adipose_ranking_scaled, batch = cluster, design = design)
 
-#pca_1 <- prcomp(t(Exprs_adipose_to_PCA), scale. = T)
-#ggplot(mapping = aes(pca_1$x[,1], pca_1$x[,2], color = subj)) + geom_point()
+data_median <- apply(Exprs_adipose_to_PCA, 2, median, na.rm=TRUE)
+Exprs_adipose_to_PCA <- Exprs_adipose_to_PCA[] - data_median[col(Exprs_adipose_to_PCA)[]]
+Exprs_adipose_to_PCA <- removeBatchEffect(Exprs_adipose_to_PCA, batch = cluster, design = design)
 
-#rtse_1 <- Rtsne(t(Exprs_adipose_to_PCA), perplexity = 5)
-#ggplot(mapping = aes(rtse_1$Y[,1], rtse_1$Y[,2], color = subj)) + geom_point()
+pca_1 <- prcomp(t(Exprs_adipose_to_PCA), scale. = T)
+ggplot(mapping = aes(pca_1$x[,1],pca_1$x[,2], color = grps)) + 
+  geom_point(size = 2) +
+  stat_ellipse(lwd = 0.5, show.legend = F) +
+  theme_minimal() +
+  theme(axis.line = element_line(),
+        axis.text = element_text(size= 18),
+        axis.title = element_text(size = 30),
+        legend.key.size = unit(1, 'cm'), #change legend key size
+        legend.title = element_text(size=20), #change legend title font size
+        legend.text = element_text(size=15), 
+        panel.grid = element_blank() ) + 
+  labs(x = paste("PC1", round(pca_1$sdev[1]/sum(pca_1$sdev)*100,2),"%", sep = " "), 
+       y = paste("PC2", round(pca_1$sdev[2]/sum(pca_1$sdev)*100,2),"%", sep = " ")) + 
+  scale_color_manual("Groups",values = color_plots)
 
+geneSymbols <- mapIds(org.Hs.eg.db, keys=rownames(Exprs_adipose_ranking_scaled_nobatch), column="SYMBOL", keytype="ACCNUM", multiVals="first")
+
+protein_median <- apply(Exprs_adipose_ranking_scaled_nobatch,1,FUN = function(x) median(x,na.rm = T))
+protein_median <- as.data.frame(cbind(genes = geneSymbols,medians = protein_median))
+protein_median <- protein_median[order(as.numeric(protein_median[,2]),decreasing = T),]
+protein_median <- as.data.frame(cbind(protein_median, rank =1:3282))
+
+ggplot() +
+  geom_point(data = protein_median, 
+             mapping = aes(as.numeric(rank), as.numeric(medians)),
+             size = 2) +
+  geom_point(data = protein_median %>% 
+               filter(genes %in% c("HBB", "HBA1", "ALB")), 
+             mapping = aes(as.numeric(rank), as.numeric(medians)), 
+             color = "red",
+             size = 4) +
+  geom_point(data = protein_median %>% 
+               filter(genes %in% c("FABP4", "PLIN1", "VCL","RAB10","SLC2A4","ADIPOQ")), 
+             mapping = aes(as.numeric(rank), as.numeric(medians)), 
+             color = "green",
+             size = 4) +
+  theme_minimal() + 
+  theme(axis.line = element_line(),
+        axis.text = element_text(size= 18),
+        axis.title = element_text(size = 30), 
+        panel.grid = element_blank())+
+  labs(x = "Protein abundances ranked", y = "Log2 Intensities") +
+  scale_x_continuous(limits = c(-10,3295), 
+                     expand = c(0,0)) +
+  geom_text_repel(data = protein_median, 
+                  aes(x = as.numeric(rank), 
+                      y = as.numeric(medians),
+                      label=ifelse(genes %in% c("HBB","HBA1","ALB","FABP4","PLIN1", "ADIPOQ","VCL","RAB10","SLC2A4"),
+                                   as.character(protein_median[,1]),'')), 
+                  max.overlaps = 3000,
+                  size = 8) 
+  
 #imputation
 set.seed(123)
 Exprs_adipose_imputed <- scImpute(Exprs_adipose_notImputed, 0.7, combined)
@@ -355,58 +436,92 @@ qqplot6 <- ggplot(mapping = aes(sample = Exprs_adipose_6_I[,6])) + stat_qq_line(
 
 ggarrange(qqplot1,qqplot2,qqplot3,qqplot4,qqplot5,qqplot6)
 #### Plot Not imputed ####
-barplot1 <- ggplot() + geom_histogram(aes(Exprs_adipose_notImputed[,Sample6_select][,1], alpha = 1000),position = "stack", color = "black", fill = "blue") + 
+barplot1 <- ggplot() + geom_histogram(aes(Exprs_adipose_notImputed[,Sample6_select][,1], alpha = 1000),
+                                      position = "stack", color = "black", fill = "blue") + 
   theme_minimal() + 
-  theme(legend.position = "none") + 
-  labs(x = colnames(Exprs_adipose_notImputed[,Sample6_select])[1])
+  theme(legend.position = "none",
+        panel.grid = element_blank(),
+        axis.line = element_line()) + 
+  scale_y_continuous(limits = c(0,250), expand = c(0,0)) +
+  labs(y = "Count", x = "Intensities")
 
 barplot2 <- ggplot() + geom_histogram(aes(Exprs_adipose_notImputed[,Sample6_select][,2], alpha = 1000),position = "stack", color = "black", fill = "blue") + 
   theme_minimal() + 
-  theme(legend.position = "none") + 
-  labs(x = colnames(Exprs_adipose_notImputed[,Sample6_select])[2])
+  theme(legend.position = "none",
+        panel.grid = element_blank(),
+        axis.line = element_line()) + 
+  scale_y_continuous(limits = c(0,270), expand = c(0,0)) +
+  labs(y = "", x = "Intensities")
 
 barplot3 <- ggplot() + geom_histogram(aes(Exprs_adipose_notImputed[,Sample6_select][,3], alpha = 1000),position = "stack", color = "black", fill = "blue") + 
   theme_minimal() + 
-  theme(legend.position = "none") + 
-  labs(x = colnames(Exprs_adipose_notImputed[,Sample6_select])[3])
+  theme(legend.position = "none",
+        panel.grid = element_blank(),
+        axis.line = element_line()) + 
+  scale_y_continuous(limits = c(0,250), expand = c(0,0)) +
+  labs(y = "", x = "Intensities")
 
 barplot4 <- ggplot() + geom_histogram(aes(Exprs_adipose_notImputed[,Sample6_select][,4], alpha = 1000),position = "stack", color = "black", fill = "blue") + 
   theme_minimal() + 
-  theme(legend.position = "none") + 
-  labs(x = colnames(Exprs_adipose_notImputed[,Sample6_select])[4])
+  theme(legend.position = "none",
+        panel.grid = element_blank(),
+        axis.line = element_line()) + 
+  scale_y_continuous(limits = c(0,250), expand = c(0,0)) +
+  labs(y = "Count", x = "Intensities")
 
 barplot5 <- ggplot() + geom_histogram(aes(Exprs_adipose_notImputed[,Sample6_select][,5], alpha = 1000),position = "stack", color = "black", fill = "blue") + 
   theme_minimal() + 
-  theme(legend.position = "none") + 
-  labs(x = colnames(Exprs_adipose_notImputed[,Sample6_select])[5])
+  theme(legend.position = "none",
+        panel.grid = element_blank(),
+        axis.line = element_line()) + 
+  scale_y_continuous(limits = c(0,250), expand = c(0,0)) +
+  labs(y = "", x = "Intensities")
 
 barplot6 <- ggplot() + geom_histogram(aes(Exprs_adipose_notImputed[,Sample6_select][,6], alpha = 1000),position = "stack", color = "black", fill = "blue") + 
   theme_minimal() + 
-  theme(legend.position = "none") + 
-  labs(x = colnames(Exprs_adipose_notImputed[,Sample6_select])[6])
+  theme(legend.position = "none",
+        panel.grid = element_blank(),
+        axis.line = element_line()) + 
+  scale_y_continuous(limits = c(0,250), expand = c(0,0)) +
+  labs(y = "", x = "Intensities")
 
 ggarrange(barplot1, barplot2, barplot3, barplot4, barplot5, barplot6)
 
 
-qqplot1 <- ggplot(mapping = aes(sample = Exprs_adipose_notImputed[,Sample6_select][,1])) + stat_qq_line(size = 1) +
-  stat_qq(aes(alpha = 1000),color = "red") + theme_minimal() + 
-  theme(legend.position = "none") + labs(title = colnames(Exprs_adipose_notImputed[,Sample6_select])[1]) + 
-  scale_color_viridis()
-qqplot2 <- ggplot(mapping = aes(sample = Exprs_adipose_notImputed[,Sample6_select][,2])) + stat_qq_line(size = 1) +
-  stat_qq(aes(alpha = 1000),color = "red") + theme_minimal() + 
-  theme(legend.position = "none") + labs(title = colnames(Exprs_adipose_notImputed[,Sample6_select])[2])
-qqplot3 <- ggplot(mapping = aes(sample = Exprs_adipose_notImputed[,Sample6_select][,3])) + stat_qq_line(size = 1) +
-  stat_qq(aes(alpha = 1000),color = "red") + theme_minimal() + 
-  theme(legend.position = "none") + labs(title = colnames(Exprs_adipose_notImputed[,Sample6_select])[3])
+qqplot1 <- ggplot(mapping = aes(sample = Exprs_adipose_notImputed[,Sample6_select][,1])) + 
+  stat_qq_line(size = 1) +
+  stat_qq(aes(alpha = 1000),color = "red") + 
+  theme_minimal() + 
+  theme(legend.position = "none")
+
+qqplot2 <- ggplot(mapping = aes(sample = Exprs_adipose_notImputed[,Sample6_select][,2])) + 
+  stat_qq_line(size = 1) +
+  stat_qq(aes(alpha = 1000),color = "red") + 
+  theme_minimal() + 
+  theme(legend.position = "none") 
+
+qqplot3 <- ggplot(mapping = aes(sample = Exprs_adipose_notImputed[,Sample6_select][,3])) + 
+  stat_qq_line(size = 1) +
+  stat_qq(aes(alpha = 1000),color = "red") + 
+  theme_minimal() + 
+  theme(legend.position = "none") 
+
 qqplot4 <- ggplot(mapping = aes(sample = Exprs_adipose_notImputed[,Sample6_select][,4])) + stat_qq_line(size = 1) +
-  stat_qq(aes(alpha = 1000),color = "red") + theme_minimal() + 
-  theme(legend.position = "none") + labs(title = colnames(Exprs_adipose_notImputed[,Sample6_select])[4])
-qqplot5 <- ggplot(mapping = aes(sample = Exprs_adipose_notImputed[,Sample6_select][,5])) + stat_qq_line(size = 1) +
-  stat_qq(aes(alpha = 1000),color = "red") + theme_minimal() + 
-  theme(legend.position = "none") + labs(title = colnames(Exprs_adipose_notImputed[,Sample6_select])[5])
-qqplot6 <- ggplot(mapping = aes(sample = Exprs_adipose_notImputed[,Sample6_select][,6])) + stat_qq_line(size = 1) +
-  stat_qq(aes(alpha = 1000),color = "red") + theme_minimal() + 
-  theme(legend.position = "none") + labs(title = colnames(Exprs_adipose_notImputed[,Sample6_select])[6])
+  stat_qq(aes(alpha = 1000),color = "red") + 
+  theme_minimal() + 
+  theme(legend.position = "none") 
+
+qqplot5 <- ggplot(mapping = aes(sample = Exprs_adipose_notImputed[,Sample6_select][,5])) + 
+  stat_qq_line(size = 1) +
+  stat_qq(aes(alpha = 1000),color = "red") + 
+  theme_minimal() + 
+  theme(legend.position = "none")
+
+qqplot6 <- ggplot(mapping = aes(sample = Exprs_adipose_notImputed[,Sample6_select][,6])) + 
+  stat_qq_line(size = 1) +
+  stat_qq(aes(alpha = 1000),color = "red") + 
+  theme_minimal() + 
+  theme(legend.position = "none")
 
 ggarrange(qqplot1,qqplot2,qqplot3,qqplot4,qqplot5,qqplot6)
 
@@ -580,72 +695,127 @@ geneSymbols <- mapIds(org.Hs.eg.db, keys=rownames(Exprs_adipose), column="SYMBOL
 geneSymbols[1575] <- "PALM2"#Q8IXS6
 geneSymbols[1966] <- "AKAP2"#Q9Y2D5 
 result_GIR$names <- NA
-result_GIR$names[result_GIR$p.adj < 0.05] <- geneSymbols[result_GIR$p.adj < 0.05]
+result_GIR$names[result_GIR$p.adj < 0.1] <- geneSymbols[result_GIR$p.adj < 0.1]
+result_GIR$sig <- "NO"
+result_GIR$sig[result_GIR$p.adj < 0.1] <- "0.1"
+result_GIR$sig[result_GIR$p.adj < 0.05] <- "0.05"
 
-
-
-ggplot(result_GIR, aes(as.numeric(correlation), -log10(pVal), color = pVal <= 1e-04, label = names)) + 
-  geom_point(aes(alpha = 0.4)) + 
+ggplot(result_GIR, aes(as.numeric(correlation), -log10(pVal), color = sig, label = names)) + 
+  geom_point(aes(alpha = 0.4), size = 2) + 
   theme_minimal() + 
-  labs(x = "R value") + 
-  geom_hline(yintercept = -log10(1.5e-4), color = "red") + 
-  scale_x_continuous(limits = c(-0.6,0.6), seq(-0.6, 0.6, by = 0.3) , name = "R-Value") +
-  scale_color_manual(values = c("gray","#39568CFF" )) + 
-  guides(alpha = "none") + 
-  geom_text_repel()
+  labs(y = "-Log10(P.Value)") + 
+  geom_hline(yintercept = -log10(1.5e-4), 
+             color = "red") + 
+  geom_hline(yintercept = -log10(9e-04), 
+             color = "purple") +
+  scale_x_continuous(limits = c(-0.6,0.6), 
+                     seq(-0.6, 0.6, by = 0.3) , 
+                     name = "Correlation Coefficient (r)") +
+  scale_color_manual(values = c("#39568CFF", "#73D055FF","gray" ), 
+                     breaks = c("0.05","0.1")) + 
+  guides(alpha = "none") +
+  theme(axis.line = element_line(),
+        panel.grid = element_blank(),
+        legend.position = "none",
+        axis.text = element_text(size = 18),
+        axis.title = element_text(size = 30),
+        axis.ticks = element_line(),
+        axis.ticks.length = unit(0.5,"cm"))+
+  geom_text_repel(show.legend = F, 
+                  size = 5) 
 
 #### Correlation plot Sig ####
 resultall <- rbind(result_BMI,result_FFM,result_FM,
                    result_GIR,result_HbA1c,result_VO2max)
 sigprots <- resultall %>% filter(p.adj <= 0.05) %>% filter(Protein != "P02792") %>% filter(Protein != "P02794")
 
-Exprs_adipose_noBatch_notImp_ordered <- Exprs_adipose_noBatch_notImp[order(match(rownames(Exprs_adipose_noBatch_notImp),clinical_data_noNA$New_ID)),]
 
 Group = as.factor(clinical_data_noNA$Group)
+
+notinexps <- setdiff(colnames(Exprs_adipose_scaled),clinical_data_noNA$New_ID)
+Exprs_adipose_scaled <- Exprs_adipose_scaled[,-which(colnames(Exprs_adipose_scaled) %in% notinexps)]
+Exprs_adipose_scaled <- Exprs_adipose_scaled[,order(match(colnames(Exprs_adipose_scaled),clinical_data_noNA$New_ID))]
+
   
-plot2 <- ggplot(mapping = aes(clinical_data_noNA$GIR1,Exprs_adipose_noBatch_notImp_ordered[,"O95197"])) +
-  geom_point(aes(color = Group, alpha = 0.9), size = 3) +  
+plot2 <- ggplot(mapping = aes(clinical_data_noNA$GIR1,Exprs_adipose_scaled["O95197",])) +
+  geom_point(aes(alpha = 0.9,color = Group, shape = clinical_data_noNA$Condition),size = 3) +  
   theme_minimal() +
   geom_smooth(method = "lm") +
-  annotate("text", label = paste("r = -0.572"), x = 600, y = 1) + 
-  annotate("text", label = paste("adj. pVal = 0.0215"), x = 600, y = 0.75) +   
-  labs(title = "GIR vs RTN3", x = "GIR", y = "RTN3") +
-  scale_color_manual("Groups" ,values = c("#73D055FF", "#FDE725FF", "#404788FF"), labels = c("Lean", "Obese", "T2D")) +
+  annotate("text", label = paste("r = -0.572"), x = 600, y = 24, size = 10) + 
+  annotate("text", label = paste("adj PVal = 0.0215"), x = 550, y = 23.5, size = 10) +   
+  labs(x = "GIR", y = "Log2 Intnsities", title = "RTN3") +
+  scale_shape_manual("Timepoint",breaks = c("Pre","Post"), values = c(16,17))+
+  scale_color_manual("Groups" ,values = color_plots, labels = c("Lean", "Obese", "T2D")) +
   guides(alpha = "none") +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.grid = element_blank(),
+        axis.line = element_line(),
+        axis.text = element_text(size = 18),
+        axis.title = element_text(size = 30),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 15),
+        title = element_text(size = 30))
+plot2
 
-plot3 <- ggplot(mapping = aes(clinical_data_noNA$GIR1,Exprs_adipose_noBatch_notImp_ordered[,"P04075"])) +
-  geom_point(aes(color = Group, alpha = 0.9), size = 3) +  
+plot3 <- ggplot(mapping = aes(clinical_data_noNA$GIR1,Exprs_adipose_scaled["P04075",])) +
+  geom_point(aes(color = Group, alpha = 0.9, shape = clinical_data_noNA$Condition), size = 3) +  
   theme_minimal() +
   geom_smooth(method = "lm") +
-  annotate("text", label = paste("r = -0.592"), x = 600, y = 3.75) + 
-  annotate("text", label = paste("adj. pVal = 0.0214"), x = 600, y = 3.5) +   
-  labs(title = "GIR vs ALDOA", x = "GIR", y = "ALDOA") +
-  scale_color_manual("Groups" ,values = c("#73D055FF", "#FDE725FF", "#404788FF"), labels = c("Lean", "Obese", "T2D")) +
+  annotate("text", label = paste("r = -0.592"), x = 600, y = 26.75,size = 10) + 
+  annotate("text", label = paste("adj PVal = 0.0214"), x = 550, y = 26.5,size = 10) +   
+  labs(title = "ALDOA", x = "GIR", y = "Log2 Intnsities") +
+  scale_shape_manual("Timepoint",breaks = c("Pre","Post"), values = c(16,17))+
+  scale_color_manual("Groups" ,values = color_plots, labels = c("Lean", "Obese", "T2D")) +
   guides(alpha = "none") +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.grid = element_blank(),
+        axis.line = element_line(),
+        axis.text = element_text(size = 18),
+        axis.title = element_text(size = 30),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 15),
+        title = element_text(size = 30)) 
+plot3
 
-plot4 <- ggplot(mapping = aes(clinical_data_noNA$GIR1,Exprs_adipose_noBatch_notImp_ordered[,"P10620"])) +
-  geom_point(aes(color = Group, alpha = 0.9), size = 3) +  
+plot4 <- ggplot(mapping = aes(clinical_data_noNA$GIR1,Exprs_adipose_scaled["P10620",])) +
+  geom_point(aes(color = Group, alpha = 0.9, shape = clinical_data_noNA$Condition), size = 3) +  
   theme_minimal() +
   geom_smooth(method = "lm") +
-  annotate("text", label = paste("r = -0.590"), x = 600, y = 3) + 
-  annotate("text", label = paste("adj. pVal = 0.0214"), x = 600, y = 2.5) +   
-  labs(title = "GIR vs MGST1", x = "GIR", y = "MGST1") +
-  scale_color_manual("Groups" ,values = c("#73D055FF", "#FDE725FF", "#404788FF"), labels = c("Lean", "Obese", "T2D")) +
+  annotate("text", label = paste("r = -0.590"), x = 600, y = 25.75,size = 10) + 
+  annotate("text", label = paste("adj PVal = 0.0214"), x = 550, y = 25.5, size = 10) +   
+  labs(title = "MGST1", x = "GIR", y = "Log2 Intnsities") +
+  scale_shape_manual("Timepoint",breaks = c("Pre","Post"), values = c(16,17))+
+  scale_color_manual("Groups" ,values = color_plots, labels = c("Lean", "Obese", "T2D")) +
   guides(alpha = "none") +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.grid = element_blank(),
+        axis.line = element_line(),
+        axis.text = element_text(size = 18),
+        axis.title = element_text(size = 30),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 15),
+        title = element_text(size = 30))
+plot4
 
-plot5 <- ggplot(mapping = aes(clinical_data_noNA$GIR1,Exprs_adipose_noBatch_notImp_ordered[,"P11310"])) +
-  geom_point(aes(color = Group,alpha = 0.9), size = 3) + 
+plot5 <- ggplot(mapping = aes(clinical_data_noNA$GIR1,Exprs_adipose_scaled["P11310",])) +
+  geom_point(aes(color = Group,alpha = 0.9, shape = clinical_data_noNA$Condition), size = 3) + 
   theme_minimal() +
   geom_smooth(method = "lm") +
-  annotate("text", label = paste("r = -0.582"), x = 600, y = 1.5) + 
-  annotate("text", label = paste("adj. pVal = 0.0214"), x = 600, y = 1) +   
-  labs(title = "GIR vs ACADM", x = "GIR", y = "ACADM") +
-  scale_color_manual("Groups" ,values = c("#73D055FF", "#FDE725FF", "#404788FF"), labels = c("Lean", "Obese", "T2D")) +
+  annotate("text", label = paste("r = -0.582"), x = 600, y = 25,size = 10) + 
+  annotate("text", label = paste("adj PVal = 0.0214"), x = 550, y = 24, size = 10) +   
+  labs(title = "ACADM", x = "GIR", y = "Log2 Intnsities") +
+  scale_shape_manual("Timepoint",breaks = c("Pre","Post"), values = c(16,17))+
+  scale_color_manual("Groups" ,values = color_plots, labels = c("Lean", "Obese", "T2D")) +
   guides(alpha = "none") +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.grid = element_blank(),
+        axis.line = element_line(),
+        axis.text = element_text(size = 18),
+        axis.title = element_text(size = 30),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 15),
+        title = element_text(size = 30))
+plot5
 
 plot6 <- ggplot(mapping = aes(clinical_data_noNA$GIR1,Exprs_adipose_noBatch_notImp_ordered[,"Q99685"])) +
   geom_point(aes(color = Group, alpha = 0.9), size = 3) + 
@@ -728,10 +898,9 @@ plot_pair <- ggraph(graph = graph) +
   geom_edge_link(aes(color = edges$CORRELATION < 0, edge_width = abs(edges$CORRELATION))) +
   geom_node_point(size = 1) +                                         
   scale_edge_width(range = c(0.25, 1.5)) +
-  geom_node_text(aes(label = name, size = 4, fontface = "bold"), nudge_y = 0, nudge_x = 0,)+
+  geom_node_text(aes(label = name, fontface = "bold"),size = 10,nudge_y = 0, nudge_x = 0,)+
   theme_void() + theme(legend.position = "none", plot.title = element_text(hjust = 0.5) ) +
-  labs(title = "Pairwise graph") +
-  scale_edge_color_manual(values = c("#FDE725FF","#73D055FF"))
+  scale_edge_color_manual(values = c("#73D055FF", "#1F968BFF"))
 plot_pair
 #### ORA ####
 
@@ -821,22 +990,6 @@ for(i in seq_along(community_list_pairwise)){
     }
   )
 }
-
-
-enrichment_result_pairwise_Kegg <- list()
-for(i in seq_along(community_list_pairwise)){
-  tryCatch(
-    expr = {
-      enrichment_result_pairwise_Kegg[[names(community_list_pairwise)[i]]] <- enrichKEGG(gene = community_list_pairwise[[i]],
-                                                                                       universe = universe_short[,1],
-                                                                                       pvalueCutoff = 0.05,
-                                                                                       organism = "hsa")@result
-    }, error = function(e){
-      print("Error")
-    }
-  )
-}
-
 #### Plot ORA ####
 pair_df_plot <- data.frame()
 for(i in seq_along(enrichment_result_pairwise)){
@@ -848,12 +1001,22 @@ pair_df_plot <- pair_df_plot %>% filter(p.adjust <= 0.1)
 pair_df_plot$Description = factor(pair_df_plot$Description, levels=pair_df_plot[order(pair_df_plot$p.adjust), "Description"])
 
 
-ggplot(pair_df_plot, aes(y, Description)) + 
-  geom_point(aes(color = p.adjust, size = Count)) + 
+ggplot(pair_df_plot, aes(1, Description)) + 
+  geom_point(aes(color = p.adjust, size = as.factor(Count))) + 
   scale_color_viridis_c() + 
-  facet_grid(~y, scales = "free_x", space = "free") +
+  facet_grid(rows = as.factor(pair_df_plot$y), scales = "free_y", space = "free")+
   theme(axis.ticks.x = element_blank(), axis.text.x = element_blank()) + 
-  labs(y = "Pathways", x = "Clinical Values", title = "ORA pathway") 
+  labs(y = "Pathways",x = "", title = "ORA pathway") +
+  theme(axis.text = element_text(size = 18),
+        axis.title = element_text(size = 30),
+        axis.text.x = element_blank(),
+        panel.border = element_rect(colour = "black", fill=NA, size=2),
+        panel.background = element_blank(),
+        strip.text.y = element_text(size = 18)) +
+  scale_size_discrete("Size", 
+                    range = c(5,10), 
+                    breaks = c(3,6,8))  
+  
 
 #GOMF
 pair_df_plot_GOMF <- data.frame()
@@ -868,12 +1031,20 @@ pair_df_plot_GOMF$Description = factor(pair_df_plot_GOMF$Description, levels=pai
 
 
 ggplot(pair_df_plot_GOMF, aes(y, Description)) + 
-  geom_point(aes(color = p.adjust, size = Count)) + 
+  geom_point(aes(color = p.adjust, size = as.factor(Count))) + 
   scale_color_viridis_c() + 
-  facet_grid(~y, scales = "free_x") +
+  facet_grid(rows = as.factor(pair_df_plot_GOMF$y), scales = "free_x",space = "free") +
   theme(axis.ticks.x = element_blank(), axis.text.x = element_blank()) + 
-  labs(y = "Pathways", x = "Clinical Values", title = "ORA GOMF")
-
+  labs(y = "GOMF",x = "", title = "ORA GOMF") +
+  theme(axis.text = element_text(size = 18),
+        axis.title = element_text(size = 30),
+        axis.text.x = element_blank(),
+        panel.border = element_rect(colour = "black", fill=NA, size=2),
+        panel.background = element_blank(),
+        strip.text.y = element_text(size = 18)) +
+  scale_size_discrete("Size", 
+                      range = c(5,10), 
+                      breaks = c(5,6,8,10))  
 #GOBP
 pair_df_plot_GOBP <- data.frame()
 for(i in seq_along(enrichment_result_pairwise_GOBP)){
@@ -886,11 +1057,20 @@ pair_df_plot_GOBP <- pair_df_plot_GOBP %>% filter(p.adjust <= 0.1)
 pair_df_plot_GOBP$Description = factor(pair_df_plot_GOBP$Description, levels=pair_df_plot_GOBP[order(pair_df_plot_GOBP$p.adjust), "Description"])
 
 ggplot(pair_df_plot_GOBP, aes(y, Description)) + 
-  geom_point(aes(color = p.adjust, size = Count)) + 
+  geom_point(aes(color = p.adjust, size = as.factor(Count))) + 
   scale_color_viridis_c() + 
-  facet_grid(~y, scales = "free_x") +
+  facet_grid(rows = as.factor(pair_df_plot_GOBP$y), scales = "free_x") +
   theme(axis.ticks.x = element_blank(), axis.text.x = element_blank()) + 
-  labs(y = "Pathways", x = "Clinical Values", title = "ORA GOBP")
+  labs(y = "GOBP",x = "", title = "ORA GOBP") +
+  theme(axis.text = element_text(size = 18),
+        axis.title = element_text(size = 30),
+        axis.text.x = element_blank(),
+        panel.border = element_rect(colour = "black", fill=NA, size=2),
+        panel.background = element_blank(),
+        strip.text.y = element_text(size = 18)) +
+  scale_size_discrete("Size", 
+                      range = c(4,10), 
+                      breaks = c(4,11,17,28))  
 
 #GOCC
 pair_df_plot_GOCC <- data.frame()
@@ -903,12 +1083,21 @@ pair_df_plot_GOCC <- pair_df_plot_GOCC %>% filter(p.adjust <= 0.1) %>% arrange(p
 
 pair_df_plot_GOCC$Description = factor(pair_df_plot_GOCC$Description, levels=pair_df_plot_GOCC[order(pair_df_plot_GOCC$p.adjust), "Description"])
   
-ggplot(pair_df_plot_GOCC, aes(y, as.factor(Description))) + 
-  geom_point(aes(color = p.adjust, size = Count)) + 
+ggplot(pair_df_plot_GOCC, aes(1, as.factor(Description))) + 
+  geom_point(aes(color = p.adjust, size = as.factor(Count))) + 
   scale_color_viridis_c() + 
-  facet_grid(~y, scales = "free_x") +
+  facet_grid(row = as.factor(pair_df_plot_GOCC$y), scales = "free_y", space = "free") +
   theme(axis.ticks.x = element_blank(), axis.text.x = element_blank()) + 
-  labs(y = "Pathways", x = "Clinical Values", title = "ORA GOCC")
+  labs(y = "GOCC",x = "", title = "ORA GOCC") +
+  theme(axis.text = element_text(size = 18),
+        axis.title = element_text(size = 30),
+        axis.text.x = element_blank(),
+        panel.border = element_rect(colour = "black", fill=NA, size=2),
+        panel.background = element_blank(),
+        strip.text.y = element_text(size = 18)) +
+  scale_size_discrete("Size", 
+                      range = c(4,10), 
+                      breaks = c(3,19,28))
 
 
 #### Annotation ####
@@ -1041,7 +1230,7 @@ Lean_PrevsPost$Xiao <- Xiao_correction(Lean_PrevsPost)
 Lean_PrevsPost$geneName <- geneSymbols
 
 #### Dataset to send prepare ####
-new.data.send <- t(Exprs_adipose_notImputed)
+new.data.send <- Exprs_adipose
 new.data.send <- cbind(new.data.send,
                        Effecttrain_Lean$logFC,Effecttrain_Lean$P.Value,Effecttrain_Lean$Xiao,
                        Effecttrain_Obese$logFC,Effecttrain_Obese$P.Value,Effecttrain_Obese$Xiao,
@@ -1072,7 +1261,7 @@ colnames(new.data.send)[114:124] <- c("Interaction.Obese.vs.Lean.LogFC","Interac
                                        "Interaction.T2D.vs.Obese.LogFC","Interaction.T2D.vs.Obese.Pval","Interaction.T2D.vs.Obese.Xiao correction",
                                        "Interaction.main.Pval","Interaction.main.adj Pval")
 
-new.data.send <- cbind(new.data.send, colnames(Exprs_adipose_imputed), geneSymbols)
+new.data.send <- cbind(new.data.send, row.names(Exprs_adipose_imputed), geneSymbols)
 colnames(new.data.send)[125:126] <- c("Protein Names", "Gene Names") 
 
 namesprot <- cbind(clinical_data[,2], paste(clinical_data$ID,clinical_data$Condition, sep = "_"))
@@ -1105,14 +1294,23 @@ Effecttrain_Lean$newID <- NA
 Effecttrain_Lean$newID[Effecttrain_Lean$Xiao <= 0.05] <- geneSymbols[Effecttrain_Lean$Xiao <= 0.05]  
 
 LeanPlot <- ggplot(Effecttrain_Lean, aes(logFC, -log10(P.Value), color = sig, label = newID)) + 
-  geom_point(aes(alpha = 0.99)) + 
-  geom_text_repel() + 
-  theme_minimal()+
-  labs(title = "Lean train effect", y = "-log10(P.Value)") + 
+  geom_point(aes(alpha = 0.99, size = 2)) + 
+  geom_text_repel(show.legend = F) +
+  theme_minimal() +
+  theme(panel.grid = element_blank(),
+        axis.line = element_line(),
+        axis.text = element_text(size = 22),
+        axis.title.y = element_blank(),
+        axis.title = element_text(size = 25),
+        legend.position = "none") +
+  labs(x = "Log2 FC (Lean Post - Lean Pre)") + 
   theme(plot.title = element_text(hjust = 0.5)) + 
-  scale_color_manual(values = c("#440154FF", "#55C667FF", "gray")) + 
-  guides(alpha = "none")
-
+  scale_color_manual("Significant",
+                     values = c("#440154FF", "#55C667FF", "gray"), 
+                     breaks = c("-","+"),
+                     labels = c("Down", "Up")) + 
+  xlim(c(-3,3)) 
+LeanPlot
   #Obese
 Effecttrain_Obese$sig <- "NO"
 Effecttrain_Obese$sig[Effecttrain_Obese$Xiao <= 0.05 & Effecttrain_Obese$logFC >= 0] <- "+" 
@@ -1121,14 +1319,22 @@ Effecttrain_Obese$newID <- NA
 Effecttrain_Obese$newID[Effecttrain_Obese$Xiao <= 0.05] <- geneSymbols[Effecttrain_Obese$Xiao <= 0.05]  
 
 ObesePlot <- ggplot(Effecttrain_Obese, aes(logFC, -log10(P.Value), color = sig, label = newID)) + 
-  geom_point(aes(alpha = 0.99)) + 
-  geom_text_repel() + 
-  theme_minimal()+
-  labs(title = "Obese train effect", y = "-log10(P.Value)") + 
-  theme(plot.title = element_text(hjust = 0.5)) +
-  scale_color_manual(values = c("#440154FF", "#55C667FF", "gray")) + 
-  guides(alpha = "none")
-  
+  geom_point(aes(alpha = 0.99, size = 2)) + 
+  geom_text_repel(show.legend = F) +
+  theme_minimal() +
+  theme(panel.grid = element_blank(),
+        axis.line = element_line(),
+        axis.text = element_text(size = 22),
+        axis.title.y = element_blank(),
+        axis.title = element_text(size = 25),
+        legend.position = "none")+
+  labs(x = "Log2 FC (Obese Post - Obese Pre)") + 
+  scale_color_manual("Significant",
+                     values = c("#440154FF", "#55C667FF", "gray"), 
+                     breaks = c("-","+"),
+                     labels = c("Down", "Up")) + 
+  xlim(c(-3,3))
+ObesePlot
   #T2D
 Effecttrain_T2D$sig <- "NO"
 Effecttrain_T2D$sig[Effecttrain_T2D$Xiao <= 0.05 & Effecttrain_T2D$logFC >= 0] <- "+" 
@@ -1137,14 +1343,23 @@ Effecttrain_T2D$newID <- NA
 Effecttrain_T2D$newID[Effecttrain_T2D$Xiao <= 0.05] <- geneSymbols[Effecttrain_T2D$Xiao <= 0.05]  
 
 T2DPlot <- ggplot(Effecttrain_T2D, aes(logFC, -log10(P.Value), color = sig, label = newID)) + 
-  geom_point(aes(alpha = 0.99)) + 
-  geom_text_repel() +
-  theme_minimal()+
-  labs(title = "T2D train effect", y = "-log10(P.Value)") + 
+  geom_point(aes(alpha = 0.99, size = 2)) + 
+  geom_text_repel(show.legend = F) +
+  theme_minimal() +
+  theme(panel.grid = element_blank(),
+        axis.line = element_line(),
+        axis.text = element_text(size = 22),
+        axis.title = element_text(size = 25),
+        legend.position = "none") +
+  labs(y = "-log10(P.Value)", 
+       x = "Log2 FC (T2D Post - T2D Pre)") + 
   theme(plot.title = element_text(hjust = 0.5)) + 
-  scale_color_manual(values = c("#440154FF", "#55C667FF", "gray")) + 
-  guides(alpha = "none")
-
+  scale_color_manual("Significant",
+                     values = c("#440154FF", "#55C667FF", "gray"), 
+                     breaks = c("-","+"),
+                     labels = c("Down", "Up")) + 
+  xlim(c(-3,3))
+T2DPlot
 
 #Interaction
   #Lean VS Obese
@@ -1155,13 +1370,23 @@ Interaction_LvsO$newID <- NA
 Interaction_LvsO$newID[Interaction_LvsO$Xiao <= 0.05] <- geneSymbols[Interaction_LvsO$Xiao <= 0.05]  
 
 LvsOPlot_I <- ggplot(Interaction_LvsO, aes(logFC, -log10(P.Value), color = sig, label = newID)) + 
-  geom_point(aes(alpha = 0.99)) + 
-  geom_text_repel() + 
-  theme_minimal()+
-  labs(title = "Lean vs Obese Interaction", y = "-log10(P.Value)") + 
+  geom_point(aes(alpha = 0.99, size = 2)) + 
+  geom_text_repel(show.legend = F) +
+  theme_minimal() +
+  theme(panel.grid = element_blank(),
+        axis.line = element_line(),
+        axis.text = element_text(size = 22),
+        axis.title.y = element_blank(),
+        axis.title = element_text(size = 25),
+        legend.position = "none") +
+  labs(x = "Log2 FC (Obese - Lean)") + 
   theme(plot.title = element_text(hjust = 0.5)) + 
-  scale_color_manual(values = c("#440154FF", "#55C667FF", "gray")) + 
-  guides(alpha = "none")
+  scale_color_manual("Significant",
+                     values = c("#440154FF", "#55C667FF", "gray"), 
+                     breaks = c("-","+"),
+                     labels = c("Down", "Up")) + 
+  xlim(c(-3,3))
+LvsOPlot_I
 
   #Obese vs T2D
 Interaction_OvsT$sig <- "NO"
@@ -1171,13 +1396,23 @@ Interaction_OvsT$newID <- NA
 Interaction_OvsT$newID[Interaction_OvsT$Xiao <= 0.05] <- geneSymbols[Interaction_OvsT$Xiao <= 0.05]  
 
 OvsTPlot_I <- ggplot(Interaction_OvsT, aes(logFC, -log10(P.Value), color = sig, label = newID)) + 
-  geom_point(aes(alpha = 0.99)) + 
-  geom_text_repel() + 
-  theme_minimal()+
-  labs(title = "Obese vs T2D Interaction", y = "-log10(P.Value)") + 
-  theme(plot.title = element_text(hjust = 0.5)) +
-  scale_color_manual(values = c("#440154FF", "#55C667FF", "gray")) + 
-  guides(alpha = "none")
+  geom_point(aes(alpha = 0.99, size = 2)) + 
+  geom_text_repel(show.legend = F) +
+  theme_minimal() +
+  theme(panel.grid = element_blank(),
+        axis.line = element_line(),
+        axis.text = element_text(size = 22),
+        axis.title.y = element_blank(),
+        axis.title = element_text(size = 25),
+        legend.position = "none") +
+  labs(x = "Log2 FC (T2D - Obese)") + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_color_manual("Significant",
+                     values = c("#440154FF", "#55C667FF", "gray"), 
+                     breaks = c("-","+"),
+                     labels = c("Down", "Up")) + 
+  xlim(c(-4,4)) 
+OvsTPlot_I
 
   #Lean VS T2D
 Interaction_LvsT$sig <- "NO"
@@ -1187,14 +1422,23 @@ Interaction_LvsT$newID <- NA
 Interaction_LvsT$newID[Interaction_LvsT$Xiao <= 0.05] <- geneSymbols[Interaction_LvsT$Xiao <= 0.05]  
 
 LvsTPlot_I <- ggplot(Interaction_LvsT, aes(logFC, -log10(P.Value), color = sig, label = newID)) + 
-  geom_point(aes(alpha = 0.99)) + 
-  geom_text_repel() +
-  theme_minimal()+
-  labs(title = "Lean VS T2D Interaction", y = "-log10(P.Value)") + 
+  geom_point(aes(alpha = 0.99, size = 2)) + 
+  geom_text_repel(show.legend = F) +
+  theme_minimal() +
+  theme(panel.grid = element_blank(),
+        axis.line = element_line(),
+        axis.text = element_text(size = 22),
+        axis.title = element_text(size = 25),
+        legend.position = "none") +
+  labs(y = "-log10(P.Value)", 
+       x = "Log2 FC (T2D - Lean)") + 
   theme(plot.title = element_text(hjust = 0.5)) + 
-  scale_color_manual(values = c("#440154FF", "#55C667FF", "gray")) + 
-  guides(alpha = "none")
-  
+  scale_color_manual("Significant",
+                     values = c("#440154FF", "#55C667FF", "gray"), 
+                     breaks = c("-","+"),
+                     labels = c("Down", "Up")) + 
+  xlim(c(-3,3)) 
+LvsTPlot_I  
 
 #Group
 #Lean VS Obese
@@ -1205,13 +1449,24 @@ OBESE_vs_LEAN$newID <- NA
 OBESE_vs_LEAN$newID[OBESE_vs_LEAN$Xiao <= 0.05] <- geneSymbols[OBESE_vs_LEAN$Xiao <= 0.05]  
 
 OvsLPlot_G <- ggplot(OBESE_vs_LEAN, aes(logFC, -log10(P.Value), color = sig, label = newID)) + 
-  geom_point(aes(alpha = 0.99)) + 
-  geom_text_repel() + 
-  theme_minimal()+
-  labs(title = "Obese vs Lean Group Effect", y = "-log10(P.Value)") + 
+  geom_point(aes(alpha = 0.99, size = 2)) + 
+  geom_text_repel(show.legend = F) +
+  theme_minimal() +
+  theme(panel.grid = element_blank(),
+        axis.line = element_line(),
+        axis.text = element_text(size = 22),
+        axis.title.y = element_blank(),
+        axis.title = element_text(size = 25),
+        legend.position = "none") +
+  labs(x = "Log2 FC (Obese - Lean)") + 
   theme(plot.title = element_text(hjust = 0.5)) + 
-  scale_color_manual(values = c("#440154FF", "#55C667FF", "gray")) + 
-  guides(alpha = "none")
+  scale_color_manual("Significant",
+                     values = c("#440154FF", "#55C667FF", "gray"), 
+                     breaks = c("-","+"),
+                     labels = c("Down", "Up")) + 
+  xlim(c(-4,4)) 
+
+OvsLPlot_G
 
 #Obese vs T2D
 T2D_vs_OBESE$sig <- "NO"
@@ -1221,13 +1476,23 @@ T2D_vs_OBESE$newID <- NA
 T2D_vs_OBESE$newID[T2D_vs_OBESE$Xiao <= 0.05] <- geneSymbols[T2D_vs_OBESE$Xiao <= 0.05]  
 
 TvsOPlot_G <- ggplot(T2D_vs_OBESE, aes(logFC, -log10(P.Value), color = sig, label = newID)) + 
-  geom_point(aes(alpha = 0.99)) + 
-  geom_text_repel() + 
-  theme_minimal()+
-  labs(title = "T2D vs Obese Group Effect", y = "-log10(P value)") + 
-  theme(plot.title = element_text(hjust = 0.5)) +
-  scale_color_manual(values = c("#440154FF", "#55C667FF", "gray")) + 
-  guides(alpha = "none")
+  geom_point(aes(alpha = 0.99, size = 2)) + 
+  geom_text_repel(show.legend = F) +
+  theme_minimal() +
+  theme(panel.grid = element_blank(),
+        axis.line = element_line(),
+        axis.text = element_text(size = 22),
+        axis.title.y = element_blank(),
+        axis.title = element_text(size = 25),
+        legend.position = "none") +
+  labs(x = "Log2 FC (T2D - Obese)") + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_color_manual("Significant",
+                     values = c("#440154FF", "#55C667FF", "gray"), 
+                     breaks = c("-","+"),
+                     labels = c("Down", "Up")) + 
+  xlim(c(-3,3)) 
+TvsOPlot_G
 
 #Lean VS T2D
 T2D_vs_LEAN$sig <- "NO"
@@ -1237,18 +1502,30 @@ T2D_vs_LEAN$newID <- NA
 T2D_vs_LEAN$newID[T2D_vs_LEAN$Xiao <= 0.05] <- geneSymbols[T2D_vs_LEAN$Xiao <= 0.05]  
 
 TvsLPlot_G <- ggplot(T2D_vs_LEAN, aes(logFC, -log10(P.Value), color = sig, label = newID)) + 
-  geom_point(aes(alpha = 0.99)) + 
-  geom_text_repel() +
-  theme_minimal()+
-  labs(title = "T2D VS Lean Group Effect", y = "-log10(P.Value)") + 
+  geom_point(aes(alpha = 0.99, size = 2)) + 
+  geom_text_repel(aes(label=ifelse(Xiao <= 0.05,
+                               as.character(protein_median[,1]),'')),
+                  show.legend = F) +
+  theme_minimal() +
+  theme(panel.grid = element_blank(),
+        axis.line = element_line(),
+        axis.text = element_text(size = 22),
+        axis.title = element_text(size = 25),
+        axis.ticks = element_line(),
+        axis.ticks.length = unit(0.25,'cm'),
+        legend.position = "none") +
+  labs(y = "-Log10(P.Value)", 
+       x = "Log2 FC (T2D - Lean)") + 
   theme(plot.title = element_text(hjust = 0.5)) + 
-  scale_color_manual(values = c("#440154FF", "#55C667FF", "gray")) + 
-  guides(alpha = "none")
-
+  scale_color_manual("Significant",
+                     values = c("#440154FF", "#55C667FF", "gray"), 
+                     breaks = c("-","+"),
+                     labels = c("Down", "Up")) + 
+  xlim(c(-3,3)) 
+TvsLPlot_G
 
 #Venn sig Train
-eulerr_options(pointsize=14)
-
+eulerr_options(pointsize=30)
 
 Effecttrain_Lean$newID <- geneSymbols
 
@@ -1261,8 +1538,9 @@ VennIndiv_Training <- ggvenn::ggvenn(list(Lean = Effecttrain_Lean$newID[Effecttr
 #Proportional Venn
 VennT <- euler(c(Lean = 11, Obese = 11, T2D = 12,
                  "Lean&T2D" = 2, "Lean&Obese" = 0, "T2D&Obese" = 1))
-VennIndiv_Training_prop <- plot(VennT, quantities = T, fills = c("#FDE725FF", "#414487FF", "#22A884FF"), 
-                                alpha = 0.9, main = "Effect Training")
+VennIndiv_Training_prop <- plot(VennT, quantities = T, 
+                                fills = color_plots, 
+                                alpha = 0.7)
 
   
   #Venn sig Inter
@@ -1279,8 +1557,9 @@ VennIndiv_Interaction <- ggvenn::ggvenn(list(Lean_vs_Obese = Interaction_LvsO$ne
 VennI <- euler(c("Lean vs Obese" = 11, "Obese vs T2D" = 25, "Lean vs T2D" = 34,
                  "Lean vs Obese&Obese vs T2D" = 4, "Lean vs Obese&Lean vs T2D" = 3, "Lean vs T2D&Obese vs T2D" = 1,
                  "Lean vs Obese&Obese vs T2D&Lean vs T2D" = 1))
-VennIndiv_Interaction_prop <- plot(VennI, quantities = T, fills = c("#FDE725FF", "#414487FF", "#22A884FF"), 
-                                   alpha = 0.9, main = "Interaction")
+VennIndiv_Interaction_prop <- plot(VennI, quantities = T, 
+                                   fills = color_plots, 
+                                   alpha = 0.7)
 
 
   #venn Diagram Groups
@@ -1295,8 +1574,9 @@ VennIndiv_Groups <- ggvenn::ggvenn(list(OBESE_vs_LEAN = OBESE_vs_LEAN$newID[OBES
 #Proportional Venn
 VennG <- euler(c("Obese vs Lean" = 10, "T2D vs Obese" = 13, "T2D vs Lean" = 38,
                  "Obese vs Lean&T2D vs Obese" = 2, "Obese vs Lean&T2D vs Lean" = 4, "T2D vs Lean&T2D vs Obese" = 11))
-VennIndiv_Group_prop <- plot(VennG, quantities = T, fills = c("#FDE725FF", "#414487FF", "#22A884FF"), 
-                             alpha = 0.9, main = "Effect Groups")
+VennIndiv_Group_prop <- plot(VennG, quantities = T, 
+                             fills = color_plots, 
+                             alpha = 0.7)
 
 #Add all gene_names main
 Effecttrain_main$newID <- geneSymbols
@@ -1535,8 +1815,42 @@ Entrichment_2D_Inter_GOMF$GO <- "GOMF"
 Enrichment_2d_Inter <- rbind(Entrichment_2D_Inter_GOCC,Entrichment_2D_Inter_GOBP,Entrichment_2D_Inter_GOMF)
 ggplot(Enrichment_2d_Inter, aes(x,y,label = annotation, color = GO)) + 
   geom_point(size = 2) +
-  geom_text_repel() +
+  geom_text_repel(aes(size = 4), max.overlaps = 9, show.legend = F) +
   theme_minimal() +
+  theme(panel.grid = element_blank(),
+        axis.line = element_line(), 
+        axis.text = element_text(size = 20),
+        axis.title = element_text(size = 30),
+        legend.title = element_text(size = 20),
+        legend.text =  element_text(size = 18)) +
   scale_color_manual(values =c("#440154FF", "#55C667FF") , "GO term") +
   xlim(c(-0.6,0.6)) +
-  ylim(c(-0.6,0.6))
+  ylim(c(-0.6,0.6)) +
+  labs(x = "Interaction T2D vs Lean", y = "Interaction T2D vs Obese")
+
+#Group
+LogTvsL <- cbind(rownames(T2D_vs_LEAN), T2D_vs_LEAN$logFC)
+LogTvsO <- cbind(rownames(T2D_vs_OBESE), T2D_vs_OBESE$logFC)
+
+Entrichment_2D_Group_GOCC <- Enrichment_2D_parallel(matrix_annotations_GOCC, LogTvsL, LogTvsO, 0.1)
+Entrichment_2D_Group_GOCC$GO <- "GOCC"
+Entrichment_2D_Group_GOBP <- Enrichment_2D_parallel(matrix_annotations_GOBP, LogTvsL, LogTvsO, 0.1)
+Entrichment_2D_Group_GOBP$GO <- "GOBP"
+Entrichment_2D_Group_GOMF <- Enrichment_2D_parallel(matrix_annotations_GOMF, LogTvsL, LogTvsO, 0.1)
+Entrichment_2D_Group_GOMF$GO <- "GOMF"
+
+Enrichment_2d_Group <- rbind(Entrichment_2D_Group_GOCC,Entrichment_2D_Group_GOBP,Entrichment_2D_Group_GOMF)
+ggplot(Enrichment_2d_Group, aes(x,y,label = annotation, color = GO)) + 
+  geom_point(size = 2) +
+  geom_text_repel(aes(size = 4), max.overlaps = 9, show.legend = F) +
+  theme_minimal() +
+  theme(panel.grid = element_blank(),
+        axis.line = element_line(), 
+        axis.text = element_text(size = 20),
+        axis.title = element_text(size = 30),
+        legend.title = element_text(size = 20),
+        legend.text =  element_text(size = 18)) +
+  scale_color_manual(values =c("#440154FF", "#55C667FF") , "GO term") +
+  xlim(c(-0.8,0.8)) +
+  ylim(c(-0.8,0.8)) +
+  labs(x = "T2D vs Lean", y = "T2D vs Obese")
