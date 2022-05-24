@@ -158,8 +158,8 @@ enrichment_1D_parallel <- function(matrix_values, Log_vec){
   for(anot in sigWil[,1]){
     make_groups <- matrix_values[matrix_values[,1] == anot,2]
     index <- which(Log_vec[,1] %in% make_groups)
-    ranked_data <- rank(Log_vec[,2])
-    s.calc <- 2*(mean(ranked_data[index]) - mean(ranked_data[-index]))/nrow(matrix_values)
+    ranked_data <- rank(as.numeric(Log_vec[,2]))
+    s.calc <- 2*(mean(ranked_data[index]) - mean(ranked_data[-index]))/length(ranked_data)
   s <- append(s,s.calc)
   }
   return(cbind(sigWil, s))
@@ -292,9 +292,9 @@ dim(Exprs_adipose)
 
 #Median normalize
 data_median <- apply(Exprs_adipose, 2, median, na.rm=TRUE)
-Exprs_adipose_notNotmalized <- Exprs_adipose
-Exprs_adipose_notImputed <- Exprs_adipose[] - data_median[col(Exprs_adipose)[]]
-#Exprs_adipose_notImputed <- medianScaling(Exprs_adipose)
+#Exprs_adipose_notNotmalized <- Exprs_adipose
+#Exprs_adipose_notImputed <- Exprs_adipose[] - data_median[col(Exprs_adipose)[]]
+Exprs_adipose_notImputed <- medianScaling(Exprs_adipose)
 Exprs_adipose_normalizaed <- Exprs_adipose_notImputed
 Exprs_adipose_scaled <- medianScaling(Exprs_adipose)
 Exprs_adipose_ranking_scaled <- medianScaling(Exprs_adipose_ranking)
@@ -310,7 +310,7 @@ Exprs_adipose_ranking_scaled_nobatch <- removeBatchEffect(Exprs_adipose_ranking_
 data_median <- apply(Exprs_adipose_to_PCA, 2, median, na.rm=TRUE)
 Exprs_adipose_to_PCA <- Exprs_adipose_to_PCA[] - data_median[col(Exprs_adipose_to_PCA)[]]
 Exprs_adipose_to_PCA <- removeBatchEffect(Exprs_adipose_to_PCA, batch = cluster, design = design)
-
+  
 pca_1 <- prcomp(t(Exprs_adipose_to_PCA), scale. = T)
 ggplot(mapping = aes(pca_1$x[,1],pca_1$x[,2], color = grps)) + 
   geom_point(size = 2) +
@@ -344,7 +344,7 @@ ggplot() +
              color = "red",
              size = 4) +
   geom_point(data = protein_median %>% 
-               filter(genes %in% c("FABP4", "PLIN1", "VCL","RAB10","SLC2A4","ADIPOQ")), 
+               filter(genes %in% c("FABP4", "PLIN1", "VCL","RAB10","SLC2A4","ADIPOQ","LEP")), 
              mapping = aes(as.numeric(rank), as.numeric(medians)), 
              color = "green",
              size = 4) +
@@ -359,7 +359,7 @@ ggplot() +
   geom_text_repel(data = protein_median, 
                   aes(x = as.numeric(rank), 
                       y = as.numeric(medians),
-                      label=ifelse(genes %in% c("HBB","HBA1","ALB","FABP4","PLIN1", "ADIPOQ","VCL","RAB10","SLC2A4"),
+                      label=ifelse(genes %in% c("HBB","HBA1","ALB","FABP4","PLIN1", "ADIPOQ","VCL","RAB10","SLC2A4","LEP"),
                                    as.character(protein_median[,1]),'')), 
                   max.overlaps = 3000,
                   size = 8) 
@@ -533,6 +533,49 @@ Correlation_matrix <- cor(try, method = "pearson")
 corrplot(Correlation_matrix, type = "upper",
          tl.col = "black", tl.srt = 45, col.lim = c(0.5,1), is.corr = F)
 
+corr_LeanPre <- cor(Exprs_adipose_notImputed[,combined == "LeanPre"], method = "pearson", use = "complete.obs")
+corr_LeanPre <- corr_LeanPre[upper.tri(corr_LeanPre)]
+corr_LeanPost <- cor(Exprs_adipose_notImputed[,combined == "LeanPost"], method = "pearson", use = "complete.obs")
+corr_LeanPost <- corr_LeanPost[upper.tri(corr_LeanPost)]
+corr_ObesePre <- cor(Exprs_adipose_notImputed[,combined == "ObesePre"], method = "pearson", use = "complete.obs")
+corr_ObesePre <- corr_ObesePre[upper.tri(corr_ObesePre)]
+corr_ObesePost <- cor(Exprs_adipose_notImputed[,combined == "ObesePost"], method = "pearson", use = "complete.obs")
+corr_ObesePost <- corr_ObesePost[upper.tri(corr_ObesePost)]
+corr_T2DPre <- cor(Exprs_adipose_notImputed[,combined == "T2DPre"], method = "pearson", use = "complete.obs")
+corr_T2DPre <- corr_T2DPre[upper.tri(corr_T2DPre)]
+corr_T2DPost <- cor(Exprs_adipose_notImputed[,combined == "T2DPost"], method = "pearson", use = "complete.obs")
+corr_T2DPost <- corr_T2DPost[upper.tri(corr_T2DPost)]
+
+corr_mat <- rbind(merge("LeanPre",corr_LeanPre), 
+                  merge("LeanPost",corr_LeanPost),
+                  merge("ObesePre",corr_ObesePre), 
+                  merge("ObesePost",corr_ObesePost),
+                  merge("T2DPre",corr_T2DPre), 
+                  merge("T2DPost",corr_T2DPost))
+
+ggplot(corr_mat,aes(factor(x, levels = unique(combined)),y)) +
+  geom_boxplot() +
+  theme_minimal() +
+  theme(panel.grid = element_blank(),
+        axis.line = element_line(), 
+        axis.title = element_text(size = 30),
+        axis.text = element_text(size = 18),
+        axis.text.x = element_text(angle = 45, vjust = 0.5)) +
+  labs(x = "Group", y = "Correlation Value (r)") 
+  
+median_vec <- c()
+median_vec <- append(median_vec, median(corr_LeanPre,na.rm = T))
+median_vec <- append(median_vec, median(corr_LeanPost,na.rm = T))
+median_vec <- append(median_vec, median(corr_ObesePre,na.rm = T))
+median_vec <- append(median_vec, median(corr_ObesePost,na.rm = T))
+median_vec <- append(median_vec, median(corr_T2DPre,na.rm = T))
+median_vec <- append(median_vec, median(corr_T2DPost,na.rm = T))
+
+names(median_vec) <- unique(combined)
+median_vec <- append(median_vec, median(c(corr_LeanPre,corr_LeanPost,
+                                          corr_ObesePre,corr_ObesePost,
+                                          corr_T2DPre,corr_T2DPost),na.rm = T))
+names(median_vec)[7] <- "Total"
 #### Data Transpose ####
 #Transpose the Expression Adipose dataframes:
 Exprs_adipose_imputed <- t(Exprs_adipose_imputed)
@@ -1503,9 +1546,7 @@ T2D_vs_LEAN$newID[T2D_vs_LEAN$Xiao <= 0.05] <- geneSymbols[T2D_vs_LEAN$Xiao <= 0
 
 TvsLPlot_G <- ggplot(T2D_vs_LEAN, aes(logFC, -log10(P.Value), color = sig, label = newID)) + 
   geom_point(aes(alpha = 0.99, size = 2)) + 
-  geom_text_repel(aes(label=ifelse(Xiao <= 0.05,
-                               as.character(protein_median[,1]),'')),
-                  show.legend = F) +
+  geom_text_repel(show.legend = F) +
   theme_minimal() +
   theme(panel.grid = element_blank(),
         axis.line = element_line(),
@@ -1590,6 +1631,42 @@ ggarrange(plotlist = list(VennIndiv_Training_prop, ggarrange(VennIndiv_Interacti
 ggarrange(LeanPlot, ObesePlot, T2DPlot, VennIndiv_Training_prop)
 ggarrange(LvsOPlot_I, OvsTPlot_I, LvsTPlot_I,VennIndiv_Interaction_prop)
 ggarrange(OvsLPlot_G, TvsOPlot_G, TvsLPlot_G, VennIndiv_Group_prop)
+
+## Bar plot baseline difference ##
+
+T2D_vs_LEAN_sig <- T2D_vs_LEAN %>% filter(Xiao <= 0.05) %>% select(logFC,newID)
+T2D_vs_OBESE_sig <- T2D_vs_OBESE %>% filter(Xiao <= 0.05) %>% select(logFC,newID)
+OBESE_vs_LEAN_sig <- OBESE_vs_LEAN %>% filter(Xiao <= 0.05) %>% select(logFC,newID)
+
+T2D_common <- merge(T2D_vs_LEAN_sig,T2D_vs_OBESE_sig, by = "newID")
+Obese_common <- merge(OBESE_vs_LEAN_sig,T2D_vs_OBESE_sig, by = "newID")
+Lean_common <- merge(OBESE_vs_LEAN_sig,T2D_vs_LEAN_sig, by = "newID")
+common <- rbind(T2D_common,Obese_common,Lean_common)
+common$newID <- as.factor(common$newID)
+
+ggplot() +
+  geom_col(aes(x = factor(rep(common$newID,2), levels = common$newID), 
+               y = c(common$logFC.x,common$logFC.y), 
+               fill = as.factor(c(rep(1,11),rep(3,2),rep(3,4),rep(2,11),rep(2,2),rep(1,4)))), 
+           position = "dodge") +
+
+  theme_minimal() + 
+  scale_fill_manual("Group", 
+                    values = color_plots,
+                    labels = c("T2D vs Lean",
+                               "T2D vs Obese",
+                               "Obese vs Lean")) + 
+  labs(x = "Gene name", y = "Log2FC") +
+  theme(panel.grid = element_blank(),
+        axis.title = element_text(size = 30),
+        axis.text = element_text(size = 18),
+        axis.text.x = element_text(angle = 90, vjust = 0.5), 
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 18),
+        axis.line = element_line(),
+        axis.ticks = element_line(),
+        axis.ticks.length = unit(0.4,"cm")) 
+  #geom_rect(aes(xmin = c("","BMPR2","NDUFV2"), xmax = c("UBXN6","IFT 172", "z"),ymin = -3.2,ymax = 2.5), fill = color_plots, alpha = 0.1)
 
 #### Finding stable protein across all samples ####
 
@@ -1750,6 +1827,37 @@ OneD_Enrichment_GOCC_LogOvsT <- enrichment_1D_parallel(matrix_annotations_GOCC, 
 rownames(OneD_Enrichment_GOCC_LogOvsT) <- 1:nrow(OneD_Enrichment_GOCC_LogOvsT)
 OneD_Enrichment_GOMF_LogOvsT <- enrichment_1D_parallel(matrix_annotations_GOMF, LogOvsT)
 rownames(OneD_Enrichment_GOMF_LogOvsT) <- 1:nrow(OneD_Enrichment_GOMF_LogOvsT)
+
+# 1D on correlation:
+r_to_1D <- cbind(result_GIR$Protein,result_GIR$correlation)
+OneD_Enrichment_GOBP_GIR <- enrichment_1D_parallel(matrix_annotations_GOBP, r_to_1D)
+rownames(OneD_Enrichment_GOBP_GIR ) <- 1:nrow(OneD_Enrichment_GOBP_GIR)
+OneD_Enrichment_GOBP_GIR$ID = "GOBP"
+OneD_Enrichment_GOCC_GIR  <- enrichment_1D_parallel(matrix_annotations_GOCC, r_to_1D)
+rownames(OneD_Enrichment_GOCC_GIR ) <- 1:nrow(OneD_Enrichment_GOCC_GIR)
+OneD_Enrichment_GOCC_GIR$ID = "GOCC"
+OneD_Enrichment_GOMF_GIR  <- enrichment_1D_parallel(matrix_annotations_GOMF, r_to_1D)
+rownames(OneD_Enrichment_GOMF_GIR ) <- 1:nrow(OneD_Enrichment_GOMF_GIR)
+OneD_Enrichment_GOMF_GIR$ID = "GOMF"
+
+OneD_Enrichment_GIR <- rbind(OneD_Enrichment_GOMF_GIR,OneD_Enrichment_GOCC_GIR,OneD_Enrichment_GOBP_GIR)
+
+ggplot(OneD_Enrichment_GIR,aes(s,-log10(as.numeric(pVal)), color = ID, label = Annotation)) +
+  geom_vline(xintercept = 0, color = "black") +
+  geom_hline(yintercept = 3, color = "black") +
+  geom_point(size = 3, alpha = 0.7) +
+  theme_minimal() +
+  scale_color_manual("GO Term", values = color_plots) +
+  theme(panel.grid = element_blank(),
+        axis.title = element_text(size = 30),
+        axis.text = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 18)) +
+  scale_x_continuous(breaks = seq(from = -0.9, to = 0.9, by = 0.3), limits = c(-0.9,0.9), labels = c(-0.9,-0.6,-0.3,0,0.3,0.6,0.9)) + 
+  labs(x = "Enrichement score", y = "-Log10 pVal") +
+  ylim(c(3,8)) + 
+  geom_text_repel(show.legend = F)
+  
 #### 2D enrichment ####
 
 Entrichment_2D_LeanvsT2D_GOCC <- Enrichment_2D_parallel(matrix_annotations_GOCC, LogLean, LogT2D, 0.05)
@@ -1805,6 +1913,9 @@ ggplot(Enrichment_2d_T2DvsObese, aes(x,y,label = annotation, color = GO)) +
   ylim(c(-1,1))
 
 #Interaction
+LogLvsT <- cbind(rownames(Interaction_LvsT), as.numeric(Interaction_LvsT[,1]))
+LogOvsT <- cbind(rownames(Interaction_OvsT), as.numeric(Interaction_OvsT[,1]))
+
 Entrichment_2D_Inter_GOCC <- Enrichment_2D_parallel(matrix_annotations_GOCC, LogLvsT, LogOvsT, 0.1)
 Entrichment_2D_Inter_GOCC$GO <- "GOCC"
 Entrichment_2D_Inter_GOBP <- Enrichment_2D_parallel(matrix_annotations_GOBP, LogLvsT, LogOvsT, 0.1)
@@ -1814,6 +1925,8 @@ Entrichment_2D_Inter_GOMF$GO <- "GOMF"
 
 Enrichment_2d_Inter <- rbind(Entrichment_2D_Inter_GOCC,Entrichment_2D_Inter_GOBP,Entrichment_2D_Inter_GOMF)
 ggplot(Enrichment_2d_Inter, aes(x,y,label = annotation, color = GO)) + 
+  geom_vline(xintercept = 0, color = "red") +
+  geom_hline(yintercept = 0, color = "red") +
   geom_point(size = 2) +
   geom_text_repel(aes(size = 4), max.overlaps = 9, show.legend = F) +
   theme_minimal() +
@@ -1828,6 +1941,42 @@ ggplot(Enrichment_2d_Inter, aes(x,y,label = annotation, color = GO)) +
   ylim(c(-0.6,0.6)) +
   labs(x = "Interaction T2D vs Lean", y = "Interaction T2D vs Obese")
 
+a <- as.data.frame(LogLvsT[which(LogLvsT[,1] %in% matrix_annotations_GOCC$Protein[which(matrix_annotations_GOCC$Annotation == "extracellular region")]),])
+b <- as.data.frame(LogOvsT[which(LogOvsT[,1] %in% matrix_annotations_GOCC$Protein[which(matrix_annotations_GOCC$Annotation == "extracellular region")]),])
+c <- inner_join(a,b,by = "Protein") 
+c$LogFC.x <- as.numeric(c$LogFC.x)
+c$LogFC.y <- as.numeric(c$LogFC.y)
+str(c)
+
+#Interaction Obesity
+LogLvsT <- cbind(rownames(Interaction_LvsT), as.numeric(Interaction_LvsT[,1]))
+LogLvsO <- cbind(rownames(Interaction_LvsO), as.numeric(Interaction_LvsO[,1]))
+
+Entrichment_2D_Inter_GOCC_Obesity <- Enrichment_2D_parallel(matrix_annotations_GOCC, LogLvsO, LogLvsT, 0.1)
+Entrichment_2D_Inter_GOCC_Obesity$GO <- "GOCC"
+Entrichment_2D_Inter_GOBP_Obesity <- Enrichment_2D_parallel(matrix_annotations_GOBP, LogLvsO, LogLvsT, 0.1)
+Entrichment_2D_Inter_GOBP_Obesity$GO <- "GOBP"
+Entrichment_2D_Inter_GOMF_Obesity <- Enrichment_2D_parallel(matrix_annotations_GOMF, LogLvsO, LogLvsT, 0.1)
+Entrichment_2D_Inter_GOMF_Obesity$GO <- "GOMF"
+
+Enrichment_2d_Inter_Obesity <- rbind(Entrichment_2D_Inter_GOCC_Obesity,Entrichment_2D_Inter_GOBP_Obesity,Entrichment_2D_Inter_GOMF_Obesity)
+ggplot(Enrichment_2d_Inter, aes(x,y,label = annotation, color = GO)) + 
+  geom_vline(xintercept = 0, color = "red") +
+  geom_hline(yintercept = 0, color = "red") +
+  geom_point(size = 2) +
+  geom_text_repel(aes(size = 4), max.overlaps = 9, show.legend = F) +
+  theme_minimal() +
+  theme(panel.grid = element_blank(),
+        axis.line = element_line(), 
+        axis.text = element_text(size = 20),
+        axis.title = element_text(size = 30),
+        legend.title = element_text(size = 20),
+        legend.text =  element_text(size = 18)) +
+  scale_color_manual(values =c("#440154FF", "#55C667FF") , "GO term") +
+  xlim(c(-0.6,0.6)) +
+  ylim(c(-0.6,0.6)) +
+  labs(x = "Interaction Obese vs Lean", y = "Interaction T2D vs Lean")
+
 #Group
 LogTvsL <- cbind(rownames(T2D_vs_LEAN), T2D_vs_LEAN$logFC)
 LogTvsO <- cbind(rownames(T2D_vs_OBESE), T2D_vs_OBESE$logFC)
@@ -1840,7 +1989,9 @@ Entrichment_2D_Group_GOMF <- Enrichment_2D_parallel(matrix_annotations_GOMF, Log
 Entrichment_2D_Group_GOMF$GO <- "GOMF"
 
 Enrichment_2d_Group <- rbind(Entrichment_2D_Group_GOCC,Entrichment_2D_Group_GOBP,Entrichment_2D_Group_GOMF)
-ggplot(Enrichment_2d_Group, aes(x,y,label = annotation, color = GO)) + 
+ggplot(Enrichment_2d_Group, aes(x,y,label = annotation, color = GO)) +
+  geom_vline(xintercept = 0, color = "red") +
+  geom_hline(yintercept = 0, color = "red") +
   geom_point(size = 2) +
   geom_text_repel(aes(size = 4), max.overlaps = 9, show.legend = F) +
   theme_minimal() +
@@ -1854,3 +2005,32 @@ ggplot(Enrichment_2d_Group, aes(x,y,label = annotation, color = GO)) +
   xlim(c(-0.8,0.8)) +
   ylim(c(-0.8,0.8)) +
   labs(x = "T2D vs Lean", y = "T2D vs Obese")
+
+#Effect obesity
+LogTvsL <- cbind(rownames(T2D_vs_LEAN), T2D_vs_LEAN$logFC)
+LogOvsL <- cbind(rownames(OBESE_vs_LEAN), OBESE_vs_LEAN$logFC)
+
+Entrichment_2D_Group_GOCC_Obese <- Enrichment_2D_parallel(matrix_annotations_GOCC, LogTvsL, LogOvsL, 0.1)
+Entrichment_2D_Group_GOCC_Obese$GO <- "GOCC"
+Entrichment_2D_Group_GOBP_Obese <- Enrichment_2D_parallel(matrix_annotations_GOBP, LogTvsL, LogOvsL, 0.1)
+Entrichment_2D_Group_GOBP_Obese$GO <- "GOBP"
+Entrichment_2D_Group_GOMF_Obese <- Enrichment_2D_parallel(matrix_annotations_GOMF, LogTvsL, LogOvsL, 0.1)
+Entrichment_2D_Group_GOMF_Obese$GO <- "GOMF"
+
+Enrichment_2d_Group_Obese <- rbind(Entrichment_2D_Group_GOCC_Obese,Entrichment_2D_Group_GOBP_Obese,Entrichment_2D_Group_GOMF_Obese)
+ggplot(Enrichment_2d_Group_Obese, aes(x,y,label = annotation, color = GO)) +
+  geom_vline(xintercept = 0, color = "red") +
+  geom_hline(yintercept = 0, color = "red") +
+  geom_point(size = 2) +
+  geom_text_repel(aes(size = 4), max.overlaps = 10, show.legend = F) +
+  theme_minimal() +
+  theme(panel.grid = element_blank(),
+        axis.line = element_line(), 
+        axis.text = element_text(size = 20),
+        axis.title = element_text(size = 30),
+        legend.title = element_text(size = 20),
+        legend.text =  element_text(size = 18)) +
+  scale_color_manual(values =c("#440154FF", "#55C667FF") , "GO term") +
+  xlim(c(-0.8,0.8)) +
+  ylim(c(-0.8,0.8)) +
+  labs(x = "T2D vs Lean", y = "Obese vs Lean")
