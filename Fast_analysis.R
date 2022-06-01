@@ -53,16 +53,6 @@ Znorm <- function(input_mat){
   }
   return(t(Output_mat))
 } 
-Znorm <- function(input_mat){
-  Output_mat = data.frame()
-  for(i in 1:ncol(input_mat)){
-    col = input_mat[,i]
-    mean_col = mean(col,na.rm = T)
-    sd_col = sd(col, na.rm = T)
-    Output_mat <- rbind(Output_mat,(col-mean_col)/sd_col)
-  }
-  return(t(Output_mat))
-} 
 
 #' Xiao correction
 #' 
