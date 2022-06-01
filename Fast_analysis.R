@@ -39,47 +39,6 @@ library(parallel)
 library(doParallel)
 setwd("/Users/Gerard/Desktop/")
 #### Functions ####
-
-Delta_calculator_Expression <- function(input_mat){
-  Out_mat <- data.frame()
-  names_expres <- colnames(input_mat)
-  name <- c()
-  done <- c()
-  for(index1 in 1:length(names_expres)){
-    if(!(index1 %in% done)){
-      index2 = which(stri_sub(names_expres,-2) == stri_sub(names_expres[index1],-2))
-      col1 = input_mat[,index1]
-      col2 = input_mat[,index2[2]]
-      col1 = as.numeric(col2) - as.numeric(col1) 
-      Out_mat <- rbind(Out_mat,t(col1))
-      name <- append(name, colnames(input_mat)[index1])
-      done <- append(done, index2[2])
-    }
-  }
-  colnames(Out_mat) = rownames(input_mat)
-  rownames(Out_mat) = stri_sub(name,-2)
-  return(Out_mat)
-}
-
-Delta_calculator_Clinical <- function(input_mat){
-  Out_mat <- data.frame()
-  done <- c()
-  name <- c()
-  for(index1 in 1:nrow(input_mat)){
-    if(!(index1 %in% done)){
-      index2 <- which(input_mat$ID == input_mat[index1,]$ID)
-      row1 = input_mat[index1,]
-      row2 = input_mat[index2[2],]
-      row1[7:58] = row2[7:58]-row1[7:58]
-      Out_mat <- rbind(Out_mat, row1)
-      name <- append(name, input_mat$New_ID[index1])
-      done <- append(done,index2[2])
-    }
-  }
-  rownames(Out_mat) = stri_sub(name,-2)
-  Out_mat <- na.omit(Out_mat)
-}
-
 Znorm <- function(input_mat){
   Output_mat = data.frame()
   for(i in 1:ncol(input_mat)){
@@ -91,48 +50,22 @@ Znorm <- function(input_mat){
   return(t(Output_mat))
 } 
 
-Correlation_OneMethod <- function(input_clinical, input_expression, method_cor, filter){
-  names1 <- colnames(input_clinical)
-  names2 <- colnames(input_expression)
-  Out_mat <- data.frame()
-  for(i in 1:ncol(input_clinical)){
-    for(j in 1:ncol(input_expression)){
-      if(length(input_expression[,j][complete.cases(input_expression[,j])]) >= filter){
-        correlation  <- cor.test(as.numeric(input_clinical[,i]),as.numeric(input_expression[,j]), method = method_cor)
-        Out_mat <- rbind(Out_mat,c(names1[i], names2[j],correlation$estimate, correlation$p.value))
-      }
-    }
-  }
-  
-  colnames(Out_mat) <- c("Clinical", "Protein", "correlation", "pVal")
-  Out_mat$pVal <- as.numeric(Out_mat$pVal)
-  Out_mat$p.adjust <- p.adjust(Out_mat$pVal, method = "BH")
-  return(Out_mat)
-}
-
-Correlation_TwoMethod <- function(input_clinical, input_expression,filter){
-  shapiro_res = data.frame()
-  for(i in 1:ncol(input_clinical)){
-    shap_res = shapiro.test(as.numeric(input_clinical[,i]))
-    shapiro_res <- rbind(shapiro_res, shap_res[["p.value"]])
-  }
-  not_normal <- which(shapiro_res <= 0.05)
-  
-  kendall = Correlation_OneMethod(input_clinical[which(shapiro_res <= 0.05)], input_expression, "kendall",filter)
-  
-  pearson = Correlation_OneMethod(input_clinical[which(shapiro_res >= 0.05)], input_expression, "pearson",filter)
-  
-  Out_mat <- rbind(pearson,kendall)
-  Out_mat$p.adjust <- p.adjust(Out_mat$pVal, method = "BH")
-  
-  return(Out_mat)
-  
-}
-
+#' Xiao correction
+#' 
+#' @param matrix_limma this is the resulting table from the topTable limma function with 1 coefficient
+#' @result a vector with the Xiao corrected p-values
 Xiao_correction <- function(matrix_limma){
   return(matrix_limma[,4] ** abs(matrix_limma[,1]))
 }
 
+#' 1D annotation enrichment analysis parallelized
+#' 
+#' @param matrix_values a matrix with the following columns 1st Annotation, 2nd Protein Name(protein has to be repeated as many times as annotations it has)
+#' @param Log_vec a matrix with the first colomn having the protein and the second the values to be enriched (LogFC, pValue, etc.) 
+#' @param pval_cutoff a number representing the p-value cutoff to be used
+#' @return a matrix with the first column having the enrichment scores for the first group, the second column has the annotation name
+#' @example 
+#' enrichment_1D_parallel(matrix_annotations_GOBP, r_to_1D)
 enrichment_1D_parallel <- function(matrix_values, Log_vec){
   annotations = unique(matrix_values[,1])
   n.cores <- parallel::detectCores() - 1
@@ -165,12 +98,15 @@ enrichment_1D_parallel <- function(matrix_values, Log_vec){
   return(cbind(sigWil, s))
 }
 
-# 2D enrichment analysis 
-# annotations = Vector with all the annotations (Not repeated)
-# matrix1 = matrix with the following columns 1st Annotation, 2nd Protein Name 
-#                                                         (protein has to be repeated as many times as annotations it has)
-# matrix1 have the proteins in the same order
-# Log_vec_1 and Log_vec_2 contein the logFC of each protein
+#' 2D annotation enrichment analysis parallelized
+#' 
+#' @param matrix1 a matrix with the following columns 1st Annotation, 2nd Protein Name(protein has to be repeated as many times as annotations it has)
+#' @param Log_vec_1 a matrix with the first colomn having the protein and the second the values to be enriched (LogFC, pValue, etc.) 
+#' @param Log_vec_2 a matrix with the first colomn having the protein and the second the values to be enriched (LogFC, pValue, etc.) 
+#' @param pval_cutoff a number representing the p-value cutoff to be used
+#' @return a matrix with the first column having the enrichment scores for the first group, the second column has the enrichment scores for the second group, the third column has the annotation name
+#' @example 
+#' Enrichment_2D_parallel(matrix_annotations_GOCC, LogLvsT, LogOvsT, 0.1)
 Enrichment_2D_parallel <- function(matrix1,Log_vec_1,Log_vec_2,pval_cutoff){
   annotations <- unique(matrix1[,1])
   
@@ -295,8 +231,7 @@ data_median <- apply(Exprs_adipose, 2, median, na.rm=TRUE)
 #Exprs_adipose_notNotmalized <- Exprs_adipose
 #Exprs_adipose_notImputed <- Exprs_adipose[] - data_median[col(Exprs_adipose)[]]
 Exprs_adipose_notImputed <- medianScaling(Exprs_adipose)
-Exprs_adipose_normalizaed <- Exprs_adipose_notImputed
-Exprs_adipose_scaled <- medianScaling(Exprs_adipose)
+Exprs_adipose_scaled <- Exprs_adipose_notImputed 
 Exprs_adipose_ranking_scaled <- medianScaling(Exprs_adipose_ranking)
 
 ### Removing cluster-batch effect. Only for PCA. 
@@ -369,7 +304,6 @@ set.seed(123)
 Exprs_adipose_imputed <- scImpute(Exprs_adipose_notImputed, 0.7, combined)
 Exprs_adipose_imputed <- tImpute(Exprs_adipose_imputed, m=1.6, s=0.6)
 Exprs_adipose_imputed_allLow <- tImpute(Exprs_adipose_notImputed, m=1.6, s=0.6)
-Exprs_adipose_noBatch_Imp <- removeBatchEffect(Exprs_adipose_imputed, batch = cluster, design = design)
 Exprs_adipose <- Exprs_adipose_notImputed
 #### Plot Imputation ####
 
@@ -379,62 +313,53 @@ Exprs_adipose_6_I = Exprs_adipose_imputed_allLow[,Sample6_select]
 
 barplot1 <- ggplot() + geom_histogram(aes(Exprs_adipose_6_I[,1], fill = Na_Exprs[,1], alpha = 1000),position = "stack", color = "black") + 
   theme_minimal() + 
-  theme(legend.position = "none") + 
+  theme(legend.position = "none",
+        panel.grid = element_blank(),
+        axis.line = element_line()) + 
   scale_fill_manual(values = c("blue","red")) +
-  labs(x = colnames(Exprs_adipose_6_I)[1])
+  labs(x = "Intensities", y = "Count")
 
 barplot2 <- ggplot() + geom_histogram(aes(Exprs_adipose_6_I[,2], fill = Na_Exprs[,2], alpha = 1000),position = "stack", color = "black") + 
   theme_minimal() + 
-  theme(legend.position = "none") + 
-  scale_fill_manual(values = c("blue","red")) +
-  labs(x = colnames(Exprs_adipose_6_I)[2])
+  theme(legend.position = "none",
+        panel.grid = element_blank(),
+        axis.line = element_line()) + 
+  scale_fill_manual(values = c("blue","red"))  +
+  labs(x = "Intensities", y = "")
 
 barplot3 <- ggplot() + geom_histogram(aes(Exprs_adipose_6_I[,3], fill = Na_Exprs[,3], alpha = 1000),position = "stack", color = "black") + 
   theme_minimal() + 
-  theme(legend.position = "none") + 
+  theme(legend.position = "none",
+        panel.grid = element_blank(),
+        axis.line = element_line()) + 
   scale_fill_manual(values = c("blue","red")) +
-  labs(x = colnames(Exprs_adipose_6_I)[3])
+  labs(x = "Intensities", y = "")
 
 barplot4 <- ggplot() + geom_histogram(aes(Exprs_adipose_6_I[,4], fill = Na_Exprs[,4], alpha = 1000),position = "stack", color = "black") + 
   theme_minimal() + 
-  theme(legend.position = "none") + 
+  theme(legend.position = "none",
+        panel.grid = element_blank(),
+        axis.line = element_line()) + 
   scale_fill_manual(values = c("blue","red")) +
-  labs(x = colnames(Exprs_adipose_6_I)[4])
+  labs(x = "Intensities", y = "Count")
 
 barplot5 <- ggplot() + geom_histogram(aes(Exprs_adipose_6_I[,5], fill = Na_Exprs[,5], alpha = 1000),position = "stack", color = "black") + 
   theme_minimal() + 
-  theme(legend.position = "none") + 
+  theme(legend.position = "none",
+        panel.grid = element_blank(),
+        axis.line = element_line()) + 
   scale_fill_manual(values = c("blue","red")) +
-  labs(x = colnames(Exprs_adipose_6_I)[5])
+  labs(x = "Intensities", y = "")
 
 barplot6 <- ggplot() + geom_histogram(aes(Exprs_adipose_6_I[,6], fill = Na_Exprs[,6], alpha = 1000),position = "stack", color = "black") + 
   theme_minimal() + 
-  theme(legend.position = "none") + 
+  theme(legend.position = "none",
+        panel.grid = element_blank(),
+        axis.line = element_line()) + 
   scale_fill_manual(values = c("blue","red")) +
-  labs(x = colnames(Exprs_adipose_6_I)[6])
+  labs(x = "Intensities", y = "")
 
 ggarrange(barplot1, barplot2, barplot3, barplot4, barplot5, barplot6)
-
-qqplot1 <- ggplot(mapping = aes(sample = Exprs_adipose_6_I[,1])) + stat_qq_line(size = 1) +
-  stat_qq(aes(alpha = 1000),color = "red") + theme_minimal() + 
-  theme(legend.position = "none") + labs(title = colnames(Exprs_adipose_notImputed[,Sample6_select])[1])
-qqplot2 <- ggplot(mapping = aes(sample = Exprs_adipose_6_I[,2])) + stat_qq_line(size = 1) +
-  stat_qq(aes(alpha = 1000),color = "red") + theme_minimal() + 
-  theme(legend.position = "none") + labs(title = colnames(Exprs_adipose_notImputed[,Sample6_select])[2])
-qqplot3 <- ggplot(mapping = aes(sample = Exprs_adipose_6_I[,3])) + stat_qq_line(size = 1) +
-  stat_qq(aes(alpha = 1000),color = "red") + theme_minimal() + 
-  theme(legend.position = "none") + labs(title = colnames(Exprs_adipose_notImputed[,Sample6_select])[3])
-qqplot4 <- ggplot(mapping = aes(sample = Exprs_adipose_6_I[,4])) + stat_qq_line(size = 1) +
-  stat_qq(aes(alpha = 1000),color = "red") + theme_minimal() + 
-  theme(legend.position = "none") + labs(title = colnames(Exprs_adipose_notImputed[,Sample6_select])[4])
-qqplot5 <- ggplot(mapping = aes(sample = Exprs_adipose_6_I[,5])) + stat_qq_line(size = 1) +
-  stat_qq(aes(alpha = 1000),color = "red") + theme_minimal() + 
-  theme(legend.position = "none") + labs(title = colnames(Exprs_adipose_notImputed[,Sample6_select])[5])
-qqplot6 <- ggplot(mapping = aes(sample = Exprs_adipose_6_I[,6])) + stat_qq_line(size = 1) +
-  stat_qq(aes(alpha = 1000),color = "red") + theme_minimal() + 
-  theme(legend.position = "none") + labs(title = colnames(Exprs_adipose_notImputed[,Sample6_select])[6])
-
-ggarrange(qqplot1,qqplot2,qqplot3,qqplot4,qqplot5,qqplot6)
 #### Plot Not imputed ####
 barplot1 <- ggplot() + geom_histogram(aes(Exprs_adipose_notImputed[,Sample6_select][,1], alpha = 1000),
                                       position = "stack", color = "black", fill = "blue") + 
@@ -492,36 +417,54 @@ qqplot1 <- ggplot(mapping = aes(sample = Exprs_adipose_notImputed[,Sample6_selec
   stat_qq_line(size = 1) +
   stat_qq(aes(alpha = 1000),color = "red") + 
   theme_minimal() + 
-  theme(legend.position = "none")
+  theme(legend.position = "none",
+        panel.grid = element_blank(),
+        axis.line = element_line()) +
+  labs(x = "Theoretical", y = "Sample")
 
 qqplot2 <- ggplot(mapping = aes(sample = Exprs_adipose_notImputed[,Sample6_select][,2])) + 
   stat_qq_line(size = 1) +
   stat_qq(aes(alpha = 1000),color = "red") + 
   theme_minimal() + 
-  theme(legend.position = "none") 
+  theme(legend.position = "none",
+        panel.grid = element_blank(),
+        axis.line = element_line()) +
+  labs(x = "Theoretical", y = "") 
 
 qqplot3 <- ggplot(mapping = aes(sample = Exprs_adipose_notImputed[,Sample6_select][,3])) + 
   stat_qq_line(size = 1) +
   stat_qq(aes(alpha = 1000),color = "red") + 
   theme_minimal() + 
-  theme(legend.position = "none") 
+  theme(legend.position = "none",
+        panel.grid = element_blank(),
+        axis.line = element_line()) +
+  labs(x = "Theoretical", y = "") 
 
 qqplot4 <- ggplot(mapping = aes(sample = Exprs_adipose_notImputed[,Sample6_select][,4])) + stat_qq_line(size = 1) +
   stat_qq(aes(alpha = 1000),color = "red") + 
   theme_minimal() + 
-  theme(legend.position = "none") 
+  theme(legend.position = "none",
+        panel.grid = element_blank(),
+        axis.line = element_line()) +
+  labs(x = "Theoretical", y = "Sample")
 
 qqplot5 <- ggplot(mapping = aes(sample = Exprs_adipose_notImputed[,Sample6_select][,5])) + 
   stat_qq_line(size = 1) +
   stat_qq(aes(alpha = 1000),color = "red") + 
   theme_minimal() + 
-  theme(legend.position = "none")
+  theme(legend.position = "none",
+        panel.grid = element_blank(),
+        axis.line = element_line()) +
+  labs(x = "Theoretical", y = "")
 
 qqplot6 <- ggplot(mapping = aes(sample = Exprs_adipose_notImputed[,Sample6_select][,6])) + 
   stat_qq_line(size = 1) +
   stat_qq(aes(alpha = 1000),color = "red") + 
   theme_minimal() + 
-  theme(legend.position = "none")
+  theme(legend.position = "none",
+        panel.grid = element_blank(),
+        axis.line = element_line()) +
+  labs(x = "Theoretical", y = "")
 
 ggarrange(qqplot1,qqplot2,qqplot3,qqplot4,qqplot5,qqplot6)
 
@@ -578,82 +521,12 @@ median_vec <- append(median_vec, median(c(corr_LeanPre,corr_LeanPost,
 names(median_vec)[7] <- "Total"
 #### Data Transpose ####
 #Transpose the Expression Adipose dataframes:
-Exprs_adipose_imputed <- t(Exprs_adipose_imputed)
-Exprs_adipose_notImputed <- t(Exprs_adipose_notImputed)
-Exprs_adipose_noBatch_Imp <- t(Exprs_adipose_noBatch_Imp)
 Exprs_adipose_noBatch_notImp <- t(Exprs_adipose_noBatch_notImp)
 
-#### Clinical prep delta #####
-Clinical_delta <- Delta_calculator_Clinical(clinical_data_noNA)
-
-Clinical_Z_noBatch_Delta <- Znorm(Clinical_delta[5:58])
-Clinical_Z_noBatch_Delta = cbind(Clinical_delta[1:4], Clinical_Z_noBatch_Delta)
-colnames(Clinical_Z_noBatch_Delta) = colnames(clinical_data_noNA)
-
-#### Expres prep delta #####
 notinexps <- setdiff(row.names(Exprs_adipose_noBatch_notImp),clinical_data_noNA$New_ID)
 for(name in notinexps){
   Exprs_adipose_noBatch_notImp <- Exprs_adipose_noBatch_notImp[-which(row.names(Exprs_adipose_noBatch_notImp) == name),]
 }
-
-Exprs_noBatch_Delta_NI <- Delta_calculator_Expression(t(Exprs_adipose_noBatch_notImp))
-remove <- c()
-for(index in 1:length(Exprs_noBatch_Delta_NI$P68871)){
-  if(is.na(Exprs_noBatch_Delta_NI$P68871[index])){
-    remove <- append(remove, index)
-  }
-}
-Exprs_noBatch_Delta_NI <- Exprs_noBatch_Delta_NI[-remove,] 
-
-Exprs_Z_noBatch_Delta_NI <- as.data.frame(Znorm(Exprs_noBatch_Delta_NI))
-colnames(Exprs_Z_noBatch_Delta_NI) <- colnames(Exprs_noBatch_Delta_NI)
-
-#### Correlation Small with noBatch and Znorm and Delta not imputed ####
-Clinical_Z_Delta_small <- Clinical_Z_noBatch_Delta %>% select_("GIR1","VO2max1", "BMI1", "HbA1c1", "FFM1", "FM1")
-rownames(Exprs_Z_noBatch_Delta_NI) <- rownames(Exprs_noBatch_Delta_NI)
-Exprs_Z_noBatch_Delta_NI <- Exprs_Z_noBatch_Delta_NI[order(match(rownames(Exprs_Z_noBatch_Delta_NI), rownames(Clinical_Z_noBatch_Delta))),]
-
-small_test_delta_NIjoin <- Correlation_TwoMethod(Clinical_Z_Delta_small,Exprs_Z_noBatch_Delta_NI,10)
-
-small_test_Delta_NI_GIR <- small_test_delta_NIjoin %>% filter(small_test_delta_NIjoin$Clinical %in% "GIR1")
-small_test_Delta_NI_GIR$p.adjust <- p.adjust(small_test_Delta_NI_GIR$pVal, method = "BH")
-
-small_test_Delta_NI_VO2max1 <- small_test_delta_NIjoin %>% filter(small_test_delta_NIjoin$Clinical %in% "VO2max1")
-small_test_Delta_NI_VO2max1$p.adjust <- p.adjust(small_test_Delta_NI_VO2max1$pVal, method = "BH")
-
-small_test_Delta_NI_BMI1 <- small_test_delta_NIjoin %>% filter(small_test_delta_NIjoin$Clinical %in% "BMI1")
-small_test_Delta_NI_BMI1$p.adjust <- p.adjust(small_test_Delta_NI_BMI1$pVal, method = "BH")
-
-small_test_Delta_NI_HbA1c1 <- small_test_delta_NIjoin %>% filter(small_test_delta_NIjoin$Clinical %in% "HbA1c1")
-small_test_Delta_NI_HbA1c1$p.adjust <- p.adjust(small_test_Delta_NI_HbA1c1$pVal, method = "BH")
-
-small_test_Delta_NI_FFM1 <- small_test_delta_NIjoin %>% filter(small_test_delta_NIjoin$Clinical %in% "FFM1")
-small_test_Delta_NI_FFM1$p.adjust <- p.adjust(small_test_Delta_NI_FFM1$pVal, method = "BH")
-
-small_test_Delta_NI_FM1 <- small_test_delta_NIjoin %>% filter(small_test_delta_NIjoin$Clinical %in% "FM1")
-small_test_Delta_NI_FM1$p.adjust <- p.adjust(small_test_Delta_NI_FM1$pVal, method = "BH")
-
-small_test_delta_NIjoin$correlation <- as.numeric(small_test_delta_NIjoin$correlation)
-small_test_Delta_sig <- small_test_delta_NIjoin %>% filter(pVal <= 0.05) %>% filter(abs(correlation) > 0.4)
-
-list1 <- list()
-Delta_no_leaf <- c()
-for(i in 1:6){
-  for(j in i:6){
-    if(i != j){
-      clii <- unique(small_test_Delta_sig$Clinical)[i]
-      clij <- unique(small_test_Delta_sig$Clinical)[j]
-      cli1 <- small_test_Delta_sig %>% filter(Clinical == clii)
-      cli2 <- small_test_Delta_sig %>% filter(Clinical == clij)
-      inter <- intersect(cli1$Protein,cli2$Protein)
-      if(length(inter) != 0){
-        list1[stri_join(clii,clij, sep = " ")] <- paste(inter, collapse = ' ')
-        Delta_no_leaf <- append(Delta_no_leaf, inter)
-      }
-    }
-  }
-}
-Delta_no_leaf <- unique(Delta_no_leaf)
 
 #### rmCorr ####
 Clinical_Z <- Znorm(clinical_data_noNA[5:58])
@@ -769,7 +642,7 @@ ggplot(result_GIR, aes(as.numeric(correlation), -log10(pVal), color = sig, label
 
 #### Correlation plot Sig ####
 resultall <- rbind(result_BMI,result_FFM,result_FM,
-                   result_GIR,result_HbA1c,result_VO2max)
+                   result_GIR[,1:7],result_HbA1c,result_VO2max)
 sigprots <- resultall %>% filter(p.adj <= 0.05) %>% filter(Protein != "P02792") %>% filter(Protein != "P02794")
 
 
@@ -860,62 +733,49 @@ plot5 <- ggplot(mapping = aes(clinical_data_noNA$GIR1,Exprs_adipose_scaled["P113
         title = element_text(size = 30))
 plot5
 
-plot6 <- ggplot(mapping = aes(clinical_data_noNA$GIR1,Exprs_adipose_noBatch_notImp_ordered[,"Q99685"])) +
-  geom_point(aes(color = Group, alpha = 0.9), size = 3) + 
+plot6 <- ggplot(mapping = aes(clinical_data_noNA$GIR1,Exprs_adipose_scaled["Q99685",])) +
+  geom_point(aes(color = Group,alpha = 0.9, shape = clinical_data_noNA$Condition), size = 3) + 
   theme_minimal() +
   geom_smooth(method = "lm") +
-  annotate("text", label = paste("r = -0.581"), x = 600, y = 1.5) + 
-  annotate("text", label = paste("adj. pVal = 0.0214"), x = 600, y = 1.25) +   
-  labs(title = "GIR vs MGLL", x = "GIR", y = "MGLL") +
-  scale_color_manual("Groups" ,values = c("#73D055FF", "#FDE725FF", "#404788FF"), labels = c("Lean", "Obese", "T2D")) +
+  annotate("text", label = paste("r = -0.581"), x = 600, y = 25, size = 10) + 
+  annotate("text", label = paste("adj PVal = 0.0214"), x = 550, y = 24.5, size = 10) +   
+  labs(title = "MGLL", x = "GIR", y = "Log2 Intnsities") +
+  scale_shape_manual("Timepoint",breaks = c("Pre","Post"), values = c(16,17))+
+  scale_color_manual("Groups" ,values = color_plots, labels = c("Lean", "Obese", "T2D")) +
   guides(alpha = "none") +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.grid = element_blank(),
+        axis.line = element_line(),
+        axis.text = element_text(size = 18),
+        axis.title = element_text(size = 30),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 15),
+        title = element_text(size = 30))
+plot6
 
-plot7 <- ggplot(mapping = aes(clinical_data_noNA$GIR1,Exprs_adipose_noBatch_notImp_ordered[,"Q9NQC3"])) +
-  geom_point(aes(color = Group, alpha = 0.9), size = 3) +
+plot7 <- ggplot(mapping = aes(clinical_data_noNA$GIR1,Exprs_adipose_scaled["Q9NQC3",])) +
+  geom_point(aes(color = Group,alpha = 0.9, shape = clinical_data_noNA$Condition), size = 3) + 
   theme_minimal() +
   geom_smooth(method = "lm") +
-  annotate("text", label = paste("r = -0.572"), x = 600, y = 2.5) + 
-  annotate("text", label = paste("adj. pVal = 0.0215"), x = 600, y = 2.25) +   
-  labs(title = "GIR vs RTN4", x = "GIR", y = "RTN4") +
-  scale_color_manual("Groups" ,values = c("#73D055FF", "#FDE725FF", "#404788FF"), labels = c("Lean", "Obese", "T2D")) +
+  annotate("text", label = paste("r = -0.572"), x = 600, y = 25.5, size = 10) + 
+  annotate("text", label = paste("adj PVal = 0.0215"), x = 550, y = 25, size = 10) +   
+  labs(title = "RTN4", x = "GIR", y = "Log2 Intnsities") +
+  scale_shape_manual("Timepoint",breaks = c("Pre","Post"), values = c(16,17))+
+  scale_color_manual("Groups" ,values = color_plots, labels = c("Lean", "Obese", "T2D")) +
   guides(alpha = "none") +
-  theme(plot.title = element_text(hjust = 0.5))
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.grid = element_blank(),
+        axis.line = element_line(),
+        axis.text = element_text(size = 18),
+        axis.title = element_text(size = 30),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 15),
+        title = element_text(size = 30))
+plot7
 
 ggarrange(plot2, plot3, plot4, plot5, plot6, plot7)
 
 #### Graph ####
-# using this df small_test_Delta_sig
-nodes <- c(unique(small_test_Delta_sig$Clinical),unique(small_test_Delta_sig$Protein))
-
-edges <- data.frame()
-for(i in 1:nrow(small_test_Delta_sig)){
-  cl <- which(nodes == small_test_Delta_sig$Clinical[i])
-  pr <- which(nodes == small_test_Delta_sig$Protein[i])
-  col <- small_test_Delta_sig$correlation[i]
-  edges <- rbind(edges,c(cl,pr,col))
-}
-nodes <- as.data.frame(nodes)
-colnames(nodes) <- c("name")
-replace <- bitr(nodes[7:116,1], fromType = "ACCNUM", toType = "ALIAS",OrgDb =org.Hs.eg.db)
-replace_short <- data.frame()
-for(prot in unique(replace$ACCNUM)){
-  replace_short <- rbind(replace_short, replace$ALIAS[which(replace$ACCNUM == prot)][1])
-}
-nodes[7:131,1] <- NA#replace_short
-colnames(edges) <- c("CLINICAL", "PROTEIN", "CORRELATION")
-
-graph_delta <- tbl_graph(nodes = nodes, edges = edges, directed = FALSE)
-
-plot_deltas <- ggraph(graph = graph_delta)+
-  geom_node_point(size = 2) +                                         
-  geom_edge_link(aes(color = edges$CORRELATION < 0, edge_width = abs(edges$CORRELATION))) +
-  scale_edge_width(range = c(0.25, 1.5)) +
-  geom_node_text(aes(label = name,  size = 4, fontface = "bold"))+
-  theme_void() + theme(legend.position = "none") +
-  labs(title = "Delta graph")
-plot_deltas
-
 #plot using pairwise correlation
 nodes <- c(unique(list_prot_sig$clinical),unique(list_prot_sig$Protein))
 
@@ -948,45 +808,11 @@ plot_pair
 #### ORA ####
 
 #Preparing universe
-universe_vector <- bitr(colnames(Exprs_Z_noBatch_Delta_NI), fromType = "ACCNUM", toType = "ENTREZID",OrgDb =org.Hs.eg.db )
+universe_vector <- bitr(colnames(Exprs_adipose_noBatch_notImp), fromType = "ACCNUM", toType = "ENTREZID",OrgDb =org.Hs.eg.db )
 universe_short <- data.frame()
 for(prot in unique(universe_vector$ACCNUM)){
   universe_short <- rbind(universe_short, universe_vector$ENTREZID[which(universe_vector$ACCNUM == prot)[1]])
 }
-
-##DELTA
-
-#Separing the different clusters for the later enrichment
-community_list_delta <- list()
-for(i in seq_along(small_test_Delta_sig$Clinical)){
-  row = small_test_Delta_sig[i,]
-  if(!(row$Protein %in% Delta_no_leaf)){
-    if(length(community_list_delta[[row$Clinical]]) == 0){
-      community_list_delta[[row$Clinical]]= c(row$Protein)
-    } else {
-      community_list_delta[[row$Clinical]] = append(community_list_delta[[row$Clinical]],row$Protein)
-    }
-  }
-}
-#Change to entrez ID
-for(i in seq_along(community_list_delta)){
-  community_list_delta[[i]] = bitr(community_list_delta[[i]], fromType = "ACCNUM", toType = "ENTREZID",OrgDb =org.Hs.eg.db )$ENTREZID
-}
-#enrichment analysis
-enrichment_result_delta <- list()
-for(i in seq_along(community_list_delta)){
-  tryCatch(
-    expr = {
-      enrichment_result_delta[[names(community_list_delta)[i]]] <- enrichPathway(gene = community_list_delta[[i]],
-                                                                                 universe = universe_short[,1],
-                                                                                 pvalueCutoff = 0.05)@result
-    }, error = function(e){
-      print("Error")
-    }
-  )
-  
-}
-View(enrichment_result_delta[[4]])
 
 ##PAIRWISE
 #Separing the different clusters for the later enrichment
@@ -1028,6 +854,36 @@ for(i in seq_along(community_list_pairwise)){
                                                                                   pvalueCutoff = 0.05,
                                                                                   OrgDb = org.Hs.eg.db,
                                                                                   ont = "CC")@result
+    }, error = function(e){
+      print("Error")
+    }
+  )
+}
+
+enrichment_result_pairwise_GOMF <- list()
+for(i in seq_along(community_list_pairwise)){
+  tryCatch(
+    expr = {
+      enrichment_result_pairwise_GOMF[[names(community_list_pairwise)[i]]] <- enrichGO(gene = community_list_pairwise[[i]],
+                                                                                       universe = universe_short[,1],
+                                                                                       pvalueCutoff = 0.05,
+                                                                                       OrgDb = org.Hs.eg.db,
+                                                                                       ont = "MF")@result
+    }, error = function(e){
+      print("Error")
+    }
+  )
+}
+
+enrichment_result_pairwise_GOBP <- list()
+for(i in seq_along(community_list_pairwise)){
+  tryCatch(
+    expr = {
+      enrichment_result_pairwise_GOBP[[names(community_list_pairwise)[i]]] <- enrichGO(gene = community_list_pairwise[[i]],
+                                                                                       universe = universe_short[,1],
+                                                                                       pvalueCutoff = 0.05,
+                                                                                       OrgDb = org.Hs.eg.db,
+                                                                                       ont = "BP")@result
     }, error = function(e){
       print("Error")
     }
@@ -1170,24 +1026,6 @@ for(Protein.IDs in rownames(Exprs_adipose)){
   }
 }
 
-matrix_annotations_GOBP_aggregate <- aggregate(matrix_annotations_GOBP$y, list(matrix_annotations_GOBP$x), paste ,collapse=" ")
-toGSEA_GOBP <- list()
-for(i in seq_along(rownames(matrix_annotations_GOBP_aggregate))){
-  toGSEA_GOBP[[matrix_annotations_GOBP_aggregate[i,1]]] <- unlist(strsplit(x = matrix_annotations_GOBP_aggregate$x[[i]], split = " "))
-}
-
-matrix_annotations_GOMF_aggregate <- aggregate(matrix_annotations_GOMF$y, list(matrix_annotations_GOMF$x), paste ,collapse=" ")
-toGSEA_GOMF <- list()
-for(i in seq_along(rownames(matrix_annotations_GOMF_aggregate))){
-  toGSEA_GOMF[[matrix_annotations_GOMF_aggregate[i,1]]] <- unlist(strsplit(x = matrix_annotations_GOMF_aggregate$x[[i]], split = " "))
-}
-
-matrix_annotations_GOCC_aggregate <- aggregate(matrix_annotations_GOCC$y, list(matrix_annotations_GOCC$x), paste ,collapse=" ")
-toGSEA_GOCC <- list()
-for(i in seq_along(rownames(matrix_annotations_GOCC_aggregate))){
-  toGSEA_GOCC[[matrix_annotations_GOCC_aggregate[i,1]]] <- unlist(strsplit(x = matrix_annotations_GOCC_aggregate$x[[i]], split = " "))
-}
-
 #### LIMMA####
 #Get the logFC using the limma package
 Group <- factor(combined, levels=c("LeanPre","LeanPost", "ObesePre", "ObesePost", "T2DPre", "T2DPost"))
@@ -1254,24 +1092,6 @@ logFC_TvsO <- T2D_vs_OBESE$logFC
 
 mainEffect_GROUP <- topTable(fit2, coef = 9:11, number = Inf,sort.by = "none")
 
-#### LIMMA Lean only ####
-Exprs_adipose_lean <- Exprs_adipose[,Group == "Lean"]
-Training_lean <- Training[Group == "Lean"]
-Cluster_lean <- cluster[Group == "Lean"]
-Lean_design <- model.matrix(~0 + Training_lean + Cluster_lean) 
-colnames(Lean_design) <- c("Pre", "Post", "Cluster1", "Cluster2")
-
-corfit <- duplicateCorrelation(Exprs_adipose_lean, Lean_design, block = df$replicate[Group == "Lean"])
-corfit$consensus
-
-fit = eBayes(lmFit(Exprs_adipose_lean, Lean_design, block = df$replicate[Group == "Lean"], correlation = corfit$consensus))
-cm <- makeContrasts(Pre - Post, levels = Lean_design)
-fit2 <- eBayes(contrasts.fit(fit,cm))
-
-Lean_PrevsPost <- topTable(fit2,1,Inf, sort.by = "none")
-Lean_PrevsPost$Xiao <- Xiao_correction(Lean_PrevsPost)
-Lean_PrevsPost$geneName <- geneSymbols
-
 #### Dataset to send prepare ####
 new.data.send <- Exprs_adipose
 new.data.send <- cbind(new.data.send,
@@ -1323,6 +1143,9 @@ geneSymbols <- mapIds(org.Hs.eg.db, keys=rownames(Exprs_adipose), column="SYMBOL
 # will be changed.
 geneSymbols[1575] <- "PALM2"#Q8IXS6
 geneSymbols[1966] <- "AKAP2"#Q9Y2D5 
+
+gene_matrix <- cbind(names(geneSymbols), geneSymbols)
+colnames(gene_matrix) = c("y","x")
 
 Effecttrain_main$geneName = geneSymbols
 Interaction_main$geneName = geneSymbols
@@ -1403,7 +1226,7 @@ T2DPlot <- ggplot(Effecttrain_T2D, aes(logFC, -log10(P.Value), color = sig, labe
                      labels = c("Down", "Up")) + 
   xlim(c(-3,3))
 T2DPlot
-
+ggarrange(T2DPlot, ObesePlot, LeanPlot, nrow = 1)
 #Interaction
   #Lean VS Obese
 Interaction_LvsO$sig <- "NO"
@@ -1564,7 +1387,7 @@ TvsLPlot_G <- ggplot(T2D_vs_LEAN, aes(logFC, -log10(P.Value), color = sig, label
                      labels = c("Down", "Up")) + 
   xlim(c(-3,3)) 
 TvsLPlot_G
-
+ggarrange(TvsLPlot_G, OvsLPlot_G,TvsOPlot_G, nrow = 1)
 #Venn sig Train
 eulerr_options(pointsize=30)
 
@@ -1684,150 +1507,6 @@ CV <- CV[order(CV, decreasing = F)]
 head(CV)
 
 #### 1D enrichment ####
-#LogFC Lean
-LogLean <- cbind(rownames(Effecttrain_Lean), as.numeric(Effecttrain_Lean[,1]))
-colnames(LogLean) <- c("Protein", "LogFC")
-
-OneD_Enrichment_GOBP_LogL <- enrichment_1D_parallel(matrix_annotations_GOBP, LogLean)
-rownames(OneD_Enrichment_GOBP_LogL) <- 1:nrow(OneD_Enrichment_GOBP_LogL)
-OneD_Enrichment_GOCC_LogL <- enrichment_1D_parallel(matrix_annotations_GOCC, LogLean)
-rownames(OneD_Enrichment_GOCC_LogL) <- 1:nrow(OneD_Enrichment_GOCC_LogL)
-OneD_Enrichment_GOMF_LogL <- enrichment_1D_parallel(matrix_annotations_GOMF, LogLean)
-rownames(OneD_Enrichment_GOMF_LogL) <- 1:nrow(OneD_Enrichment_GOMF_LogL)
-
-#LogFC Obese
-LogObese <- cbind(rownames(Effecttrain_Obese), as.numeric(Effecttrain_Obese$logFC))
-colnames(LogObese) <- c("Protein", "LogFC")
-
-OneD_Enrichment_GOBP_LogO <- enrichment_1D_parallel(matrix_annotations_GOBP, LogObese)
-rownames(OneD_Enrichment_GOBP_LogO) <- 1:nrow(OneD_Enrichment_GOBP_LogO)
-OneD_Enrichment_GOCC_LogO <- enrichment_1D_parallel(matrix_annotations_GOCC, LogObese)
-rownames(OneD_Enrichment_GOCC_LogO) <- 1:nrow(OneD_Enrichment_GOCC_LogO)
-OneD_Enrichment_GOMF_LogO <- enrichment_1D_parallel(matrix_annotations_GOMF, LogObese)
-rownames(OneD_Enrichment_GOMF_LogO) <- 1:nrow(OneD_Enrichment_GOMF_LogO)
-
-#LogFC T2D
-LogT2D <- cbind(rownames(Effecttrain_T2D), as.numeric(Effecttrain_T2D$logFC))
-colnames(LogT2D) <- c("Protein", "LogFC")
-
-OneD_Enrichment_GOBP_LogT <- enrichment_1D_parallel(matrix_annotations_GOBP, LogT2D)
-rownames(OneD_Enrichment_GOBP_LogT) <- 1:nrow(OneD_Enrichment_GOBP_LogT)
-OneD_Enrichment_GOCC_LogT <- enrichment_1D_parallel(matrix_annotations_GOCC, LogT2D)
-rownames(OneD_Enrichment_GOCC_LogT) <- 1:nrow(OneD_Enrichment_GOCC_LogT)
-OneD_Enrichment_GOMF_LogT <- enrichment_1D_parallel(matrix_annotations_GOMF, LogT2D)
-rownames(OneD_Enrichment_GOMF_LogT) <- 1:nrow(OneD_Enrichment_GOMF_LogT)
-
-#Xiao Lean
-XiaoLean <- cbind(rownames(Effecttrain_Lean), as.numeric(Effecttrain_Lean[,7]))
-colnames(XiaoLean) <- c("Protein", "Xiao")
-
-OneD_Enrichment_GOBP_XiaoL <- enrichment_1D_parallel(matrix_annotations_GOBP, XiaoLean)
-rownames(OneD_Enrichment_GOBP_XiaoL) <- 1:nrow(OneD_Enrichment_GOBP_XiaoL)
-OneD_Enrichment_GOCC_XiaoL <- enrichment_1D_parallel(matrix_annotations_GOCC, XiaoLean)
-rownames(OneD_Enrichment_GOCC_XiaoL) <- 1:nrow(OneD_Enrichment_GOCC_XiaoL)
-OneD_Enrichment_GOMF_XiaoL <- enrichment_1D_parallel(matrix_annotations_GOMF, XiaoLean)
-rownames(OneD_Enrichment_GOMF_XiaoL) <- 1:nrow(OneD_Enrichment_GOMF_XiaoL)
-
-#Xiao Obese
-XiaoObese <- cbind(rownames(Effecttrain_Obese), as.numeric(Effecttrain_Obese[,7]))
-colnames(XiaoObese) <- c("Protein", "Xiao")
-
-OneD_Enrichment_GOBP_XiaoO <- enrichment_1D_parallel(matrix_annotations_GOBP, LogObese)
-rownames(OneD_Enrichment_GOBP_XiaoO) <- 1:nrow(OneD_Enrichment_GOBP_XiaoO)
-OneD_Enrichment_GOCC_XiaoO <- enrichment_1D_parallel(matrix_annotations_GOCC, LogObese)
-rownames(OneD_Enrichment_GOCC_XiaoO) <- 1:nrow(OneD_Enrichment_GOCC_XiaoO)
-OneD_Enrichment_GOMF_XiaoO <- enrichment_1D_parallel(matrix_annotations_GOMF, LogObese)
-rownames(OneD_Enrichment_GOMF_XiaoO) <- 1:nrow(OneD_Enrichment_GOMF_XiaoO)
-
-#Xiao T2D
-XiaoT2D <- cbind(rownames(Effecttrain_T2D), as.numeric(Effecttrain_T2D[,7]))
-colnames(XiaoT2D) <- c("Protein", "Xiao")
-
-OneD_Enrichment_GOBP_XiaoT <- enrichment_1D_parallel(matrix_annotations_GOBP, LogT2D)
-rownames(OneD_Enrichment_GOBP_XiaoT) <- 1:nrow(OneD_Enrichment_GOBP_XiaoT)
-OneD_Enrichment_GOCC_XiaoT <- enrichment_1D_parallel(matrix_annotations_GOCC, LogT2D)
-rownames(OneD_Enrichment_GOCC_XiaoT) <- 1:nrow(OneD_Enrichment_GOCC_XiaoT)
-OneD_Enrichment_GOMF_XiaoT <- enrichment_1D_parallel(matrix_annotations_GOMF, LogT2D)
-rownames(OneD_Enrichment_GOMF_XiaoT) <- 1:nrow(OneD_Enrichment_GOMF_XiaoT)
-
-#Pvalue Lean
-PvalueLean <- cbind(rownames(Effecttrain_Lean), as.numeric(Effecttrain_Lean[,4]))
-colnames(PvalueLean) <- c("Protein", "Pvalue")
-
-OneD_Enrichment_GOBP_PvalueL <- enrichment_1D_parallel(matrix_annotations_GOBP, PvalueLean)
-rownames(OneD_Enrichment_GOBP_PvalueL) <- 1:nrow(OneD_Enrichment_GOBP_PvalueL)
-OneD_Enrichment_GOCC_PvalueL <- enrichment_1D_parallel(matrix_annotations_GOCC, PvalueLean)
-rownames(OneD_Enrichment_GOCC_PvalueL) <- 1:nrow(OneD_Enrichment_GOCC_PvalueL)
-OneD_Enrichment_GOMF_PvalueL <- enrichment_1D_parallel(matrix_annotations_GOMF, PvalueLean)
-rownames(OneD_Enrichment_GOMF_PvalueL) <- 1:nrow(OneD_Enrichment_GOMF_PvalueL)
-
-#Pvalue Obese
-PvalueObese <- cbind(rownames(Effecttrain_Obese), as.numeric(Effecttrain_Obese[,4]))
-colnames(PvalueObese) <- c("Protein", "Pvalue")
-
-OneD_Enrichment_GOBP_PvalueO <- enrichment_1D_parallel(matrix_annotations_GOBP, PvalueObese)
-rownames(OneD_Enrichment_GOBP_PvalueO) <- 1:nrow(OneD_Enrichment_GOBP_PvalueO)
-OneD_Enrichment_GOCC_PvalueO <- enrichment_1D_parallel(matrix_annotations_GOCC, PvalueObese)
-rownames(OneD_Enrichment_GOCC_PvalueO) <- 1:nrow(OneD_Enrichment_GOCC_PvalueO)
-OneD_Enrichment_GOMF_PvalueO <- enrichment_1D_parallel(matrix_annotations_GOMF, PvalueObese)
-rownames(OneD_Enrichment_GOMF_PvalueO) <- 1:nrow(OneD_Enrichment_GOMF_PvalueO)
-
-#Pvalue T2D
-PvalueT2D <- cbind(rownames(Effecttrain_T2D), as.numeric(Effecttrain_T2D[,4]))
-colnames(PvalueT2D) <- c("Protein", "Pvalue")
-
-OneD_Enrichment_GOBP_PvalueT <- enrichment_1D_parallel(matrix_annotations_GOBP, PvalueT2D)
-rownames(OneD_Enrichment_GOBP_PvalueT) <- 1:nrow(OneD_Enrichment_GOBP_PvalueT)
-OneD_Enrichment_GOCC_PvalueT <- enrichment_1D_parallel(matrix_annotations_GOCC, PvalueT2D)
-rownames(OneD_Enrichment_GOCC_PvalueT) <- 1:nrow(OneD_Enrichment_GOCC_PvalueT)
-OneD_Enrichment_GOMF_PvalueT <- enrichment_1D_parallel(matrix_annotations_GOMF, PvalueT2D)
-rownames(OneD_Enrichment_GOMF_PvalueT) <- 1:nrow(OneD_Enrichment_GOMF_PvalueT)
-
-#Pvalue main
-PvalueMain <- cbind(rownames(Effecttrain_main), as.numeric(Effecttrain_main[,4]))
-colnames(PvalueMain) <- c("Protein", "Pvalue")
-
-OneD_Enrichment_GOBP_PvalueMain <- enrichment_1D_parallel(matrix_annotations_GOBP, PvalueMain)
-rownames(OneD_Enrichment_GOBP_PvalueMain) <- 1:nrow(OneD_Enrichment_GOBP_PvalueMain)
-OneD_Enrichment_GOCC_PvalueMain <- enrichment_1D_parallel(matrix_annotations_GOCC, PvalueMain)
-rownames(OneD_Enrichment_GOCC_PvalueMain) <- 1:nrow(OneD_Enrichment_GOCC_PvalueMain)
-OneD_Enrichment_GOMF_PvalueMain <- enrichment_1D_parallel(matrix_annotations_GOMF, PvalueMain)
-rownames(OneD_Enrichment_GOMF_PvalueMain) <- 1:nrow(OneD_Enrichment_GOMF_PvalueMain)
-
-#Interaction
-#LogFC LvsT
-LogLvsT <- cbind(rownames(Interaction_LvsT), as.numeric(Interaction_LvsT[,1]))
-colnames(LogLvsT) <- c("Protein", "LogFC")
-
-OneD_Enrichment_GOBP_LogLvsT <- enrichment_1D_parallel(matrix_annotations_GOBP, LogLvsT)
-rownames(OneD_Enrichment_GOBP_LogLvsT) <- 1:nrow(OneD_Enrichment_GOBP_LogLvsT)
-OneD_Enrichment_GOCC_LogLvsT <- enrichment_1D_parallel(matrix_annotations_GOCC, LogLvsT)
-rownames(OneD_Enrichment_GOCC_LogLvsT) <- 1:nrow(OneD_Enrichment_GOCC_LogLvsT)
-OneD_Enrichment_GOMF_LogLvsT <- enrichment_1D_parallel(matrix_annotations_GOMF, LogLvsT)
-rownames(OneD_Enrichment_GOMF_LogLvsT) <- 1:nrow(OneD_Enrichment_GOMF_LogLvsT)
-
-#LogFC LvsO
-LogLvsO <- cbind(rownames(Interaction_LvsO), as.numeric(Interaction_LvsO[,1]))
-colnames(LogLvsO) <- c("Protein", "LogFC")
-
-OneD_Enrichment_GOBP_LogLvsO <- enrichment_1D_parallel(matrix_annotations_GOBP, LogLvsO)
-rownames(OneD_Enrichment_GOBP_LogLvsO) <- 1:nrow(OneD_Enrichment_GOBP_LogLvsO)
-OneD_Enrichment_GOCC_LogLvsO <- enrichment_1D_parallel(matrix_annotations_GOCC, LogLvsO)
-rownames(OneD_Enrichment_GOCC_LogLvsO) <- 1:nrow(OneD_Enrichment_GOCC_LogLvsO)
-OneD_Enrichment_GOMF_LogLvsO <- enrichment_1D_parallel(matrix_annotations_GOMF, LogLvsO)
-rownames(OneD_Enrichment_GOMF_LogLvsO) <- 1:nrow(OneD_Enrichment_GOMF_LogLvsO)
-
-#LogFC OvsT
-LogOvsT <- cbind(rownames(Interaction_OvsT), as.numeric(Interaction_OvsT[,1]))
-colnames(LogOvsT) <- c("Protein", "LogFC")
-
-OneD_Enrichment_GOBP_LogOvsT <- enrichment_1D_parallel(matrix_annotations_GOBP, LogOvsT)
-rownames(OneD_Enrichment_GOBP_LogOvsT) <- 1:nrow(OneD_Enrichment_GOBP_LogOvsT)
-OneD_Enrichment_GOCC_LogOvsT <- enrichment_1D_parallel(matrix_annotations_GOCC, LogOvsT)
-rownames(OneD_Enrichment_GOCC_LogOvsT) <- 1:nrow(OneD_Enrichment_GOCC_LogOvsT)
-OneD_Enrichment_GOMF_LogOvsT <- enrichment_1D_parallel(matrix_annotations_GOMF, LogOvsT)
-rownames(OneD_Enrichment_GOMF_LogOvsT) <- 1:nrow(OneD_Enrichment_GOMF_LogOvsT)
-
 # 1D on correlation:
 r_to_1D <- cbind(result_GIR$Protein,result_GIR$correlation)
 OneD_Enrichment_GOBP_GIR <- enrichment_1D_parallel(matrix_annotations_GOBP, r_to_1D)
@@ -1857,61 +1536,8 @@ ggplot(OneD_Enrichment_GIR,aes(s,-log10(as.numeric(pVal)), color = ID, label = A
   labs(x = "Enrichement score", y = "-Log10 pVal") +
   ylim(c(3,8)) + 
   geom_text_repel(show.legend = F)
-  
+
 #### 2D enrichment ####
-
-Entrichment_2D_LeanvsT2D_GOCC <- Enrichment_2D_parallel(matrix_annotations_GOCC, LogLean, LogT2D, 0.05)
-Entrichment_2D_LeanvsT2D_GOCC$GO <- "GOCC"
-Entrichment_2D_LeanvsT2D_GOBP <- Enrichment_2D_parallel(matrix_annotations_GOBP, LogLean, LogT2D, 0.05)
-Entrichment_2D_LeanvsT2D_GOBP$GO <- "GOBP"
-Entrichment_2D_LeanvsT2D_GOMF <- Enrichment_2D_parallel(matrix_annotations_GOMF, LogLean, LogT2D, 0.05)
-Entrichment_2D_LeanvsT2D_GOMF$GO <- "GOMF"
-
-Enrichment_2d_LeanvsT2D <- rbind(Entrichment_2D_LeanvsT2D_GOCC,Entrichment_2D_LeanvsT2D_GOBP,Entrichment_2D_LeanvsT2D_GOMF)
-ggplot(Enrichment_2d_LeanvsT2D, aes(x,y,label = annotation, color = GO)) + 
-  geom_point() +
-  geom_text_repel() +
-  theme_minimal() +
-  scale_color_manual(values =c("#440154FF", "#55C667FF") , "GO term") +
-  labs(x = "Lean pre vs Post", y = "T2D pre vs Post", title = "2D enrichment analysis Lean vs T2D") + 
-  theme(plot.title = element_text(hjust = 0.5))+
-  xlim(c(-1,1)) +
-  ylim(c(-1,1))
-
-Entrichment_2D_LeanvsObese_GOCC <- Enrichment_2D_parallel(matrix_annotations_GOCC, LogLean, LogObese, 0.05)
-Entrichment_2D_LeanvsObese_GOCC$GO <- "GOCC"
-Entrichment_2D_LeanvsObese_GOBP <- Enrichment_2D_parallel(matrix_annotations_GOBP, LogLean, LogObese, 0.05)
-Entrichment_2D_LeanvsObese_GOBP$GO <- "GOBP"
-Entrichment_2D_LeanvsObese_GOMF <- Enrichment_2D_parallel(matrix_annotations_GOMF, LogLean, LogObese, 0.05)
-Entrichment_2D_LeanvsObese_GOMF$GO <- "GOMF"
-
-Enrichment_2d_LeanvsObese <- rbind(Entrichment_2D_LeanvsObese_GOCC,Entrichment_2D_LeanvsObese_GOBP,Entrichment_2D_LeanvsObese_GOMF)
-ggplot(Enrichment_2d_LeanvsObese, aes(x,y,label = annotation, color = GO)) + 
-  geom_point() +
-  geom_text_repel() +
-  theme_minimal() +
-  scale_color_manual(values =c("#440154FF", "#55C667FF") , "GO term")+
-  xlim(c(-1,1)) +
-  ylim(c(-1,1)) 
-
-
-
-Entrichment_2D_T2DvsObese_GOCC <- Enrichment_2D_parallel(matrix_annotations_GOCC, LogT2D, LogObese, 0.05)
-Entrichment_2D_T2DvsObese_GOCC$GO <- "GOCC"
-Entrichment_2D_T2DvsObese_GOBP <- Enrichment_2D_parallel(matrix_annotations_GOBP, LogT2D, LogObese, 0.05)
-Entrichment_2D_T2DvsObese_GOBP$GO <- "GOBP"
-Entrichment_2D_T2DvsObese_GOMF <- Enrichment_2D_parallel(matrix_annotations_GOMF, LogT2D, LogObese, 0.05)
-Entrichment_2D_T2DvsObese_GOMF$GO <- "GOMF"
-
-Enrichment_2d_T2DvsObese <- rbind(Entrichment_2D_T2DvsObese_GOCC,Entrichment_2D_T2DvsObese_GOBP,Entrichment_2D_T2DvsObese_GOMF)
-ggplot(Enrichment_2d_T2DvsObese, aes(x,y,label = annotation, color = GO)) + 
-  geom_point() +
-  geom_text_repel() +
-  theme_minimal() +
-  scale_color_manual(values =c("#440154FF", "#55C667FF") , "GO term")+
-  xlim(c(-1,1)) +
-  ylim(c(-1,1))
-
 #Interaction
 LogLvsT <- cbind(rownames(Interaction_LvsT), as.numeric(Interaction_LvsT[,1]))
 LogOvsT <- cbind(rownames(Interaction_OvsT), as.numeric(Interaction_OvsT[,1]))
